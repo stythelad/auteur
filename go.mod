@@ -1,4 +1,4 @@
-module github.com/pokhrelmishan/sentinel
+module github.com/pokhrelmishan/auteur
 
 go 1.26.5
 

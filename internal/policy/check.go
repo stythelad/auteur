@@ -3,7 +3,7 @@ package policy
 import (
 	"fmt"
 
-	"github.com/pokhrelmishan/sentinel/internal/provenance"
+	"github.com/pokhrelmishan/auteur/internal/provenance"
 )
 
 type Violation struct {

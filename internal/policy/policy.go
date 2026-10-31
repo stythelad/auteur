@@ -8,14 +8,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const Path = ".sentinel/policy.yaml"
+const Path = ".auteur/policy.yaml"
 
 type Rule struct {
-	Name                 string   `yaml:"name"`
-	Paths                []string `yaml:"paths"`
-	RequireHumanSignoff  bool     `yaml:"require_human_signoff,omitempty"`
-	ForbidAgentAuthored  bool     `yaml:"forbid_agent_authored,omitempty"`
-	RequireCIPassed      bool     `yaml:"require_ci_passed,omitempty"`
+	Name                string   `yaml:"name"`
+	Paths               []string `yaml:"paths"`
+	RequireHumanSignoff bool     `yaml:"require_human_signoff,omitempty"`
+	ForbidAgentAuthored bool     `yaml:"forbid_agent_authored,omitempty"`
+	RequireCIPassed     bool     `yaml:"require_ci_passed,omitempty"`
 }
 
 type Policy struct {

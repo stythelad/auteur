@@ -3,7 +3,7 @@ package policy
 import (
 	"testing"
 
-	"github.com/pokhrelmishan/sentinel/internal/provenance"
+	"github.com/pokhrelmishan/auteur/internal/provenance"
 )
 
 func rec(commit string, signoff []string, ci bool, lines ...provenance.LineRange) provenance.Record {

@@ -13,7 +13,7 @@ import (
 
 // LedgerPath is the canonical location of the provenance file,
 // relative to the repo root.
-const LedgerPath = ".sentinel/provenance.jsonl"
+const LedgerPath = ".auteur/provenance.jsonl"
 
 // Store is an append-only JSONL ledger.
 // It is safe for concurrent use within a single process.
@@ -31,11 +31,11 @@ func Open(repoRoot string) *Store {
 // Path returns the absolute path of the ledger file.
 func (s *Store) Path() string { return s.path }
 
-// Init creates the .sentinel directory and an empty ledger if missing.
+// Init creates the .auteur directory and an empty ledger if missing.
 // It is idempotent.
 func (s *Store) Init() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return fmt.Errorf("create .sentinel dir: %w", err)
+		return fmt.Errorf("create .auteur dir: %w", err)
 	}
 	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {

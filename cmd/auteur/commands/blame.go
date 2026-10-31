@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pokhrelmishan/sentinel/internal/git"
-	"github.com/pokhrelmishan/sentinel/internal/provenance"
+	"github.com/pokhrelmishan/auteur/internal/git"
+	"github.com/pokhrelmishan/auteur/internal/provenance"
 )
 
 func NewBlameCmd() *cobra.Command {

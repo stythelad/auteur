@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const Path = ".sentinel/config.yaml"
+const Path = ".auteur/config.yaml"
 
 // Config is the on-disk Sentinel configuration.
 // v1 fields only; policy lives in a separate file later.
@@ -53,7 +53,7 @@ func Load(repoRoot string) (Config, error) {
 func Save(repoRoot string, c Config) error {
 	p := filepath.Join(repoRoot, Path)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return fmt.Errorf("create .sentinel dir: %w", err)
+		return fmt.Errorf("create .auteur dir: %w", err)
 	}
 	raw, err := yaml.Marshal(c)
 	if err != nil {

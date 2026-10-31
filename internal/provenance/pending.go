@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const PendingDir = ".sentinel/pending"
+const PendingDir = ".auteur/pending"
 
 type Pending struct {
 	UUID      string    `json:"uuid"`

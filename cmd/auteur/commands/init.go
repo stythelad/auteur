@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pokhrelmishan/sentinel/internal/config"
-	"github.com/pokhrelmishan/sentinel/internal/git"
-	"github.com/pokhrelmishan/sentinel/internal/policy"
-	"github.com/pokhrelmishan/sentinel/internal/provenance"
+	"github.com/pokhrelmishan/auteur/internal/config"
+	"github.com/pokhrelmishan/auteur/internal/git"
+	"github.com/pokhrelmishan/auteur/internal/policy"
+	"github.com/pokhrelmishan/auteur/internal/provenance"
 )
 
 // NewInitCmd returns the `sentinel init` subcommand.

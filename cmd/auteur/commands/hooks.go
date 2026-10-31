@@ -7,8 +7,8 @@ import (
 )
 
 const postCommitHook = `#!/bin/sh
-if command -v sentinel >/dev/null 2>&1; then
-  sentinel resolve-pending >/dev/null 2>&1 || true
+if command -v auteur >/dev/null 2>&1; then
+  auteur resolve-pending >/dev/null 2>&1 || true
 fi
 `
 
