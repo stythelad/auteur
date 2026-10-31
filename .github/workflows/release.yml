@@ -24,9 +24,9 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -o sentinel-${GOOS}-${GOARCH} ./cmd/sentinel
-          tar czf sentinel-${{ matrix.suffix }}.tar.gz sentinel-${GOOS}-${GOARCH}
+          go build -o auteur-${GOOS}-${GOARCH} ./cmd/auteur
+          tar czf auteur-${{ matrix.suffix }}.tar.gz auteur-${GOOS}-${GOARCH}
       - uses: softprops/action-gh-release@v2
         with:
-          files: sentinel-${{ matrix.suffix }}.tar.gz
+          files: auteur-${{ matrix.suffix }}.tar.gz
           generate_release_notes: true

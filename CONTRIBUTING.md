@@ -1,12 +1,12 @@
-# Contributing to Sentinel
+# Contributing to Auteur
 
-Thanks for considering a contribution. Sentinel is small and early —
+Thanks for considering a contribution. Auteur is small and early —
 issues and PRs are welcome.
 
 ## Development
 
-    git clone git@github.com:pokhrelmishan/sentinel.git
-    cd sentinel
+    git clone git@github.com:pokhrelmishan/auteur.git
+    cd auteur
     make test
     make build
 
@@ -21,7 +21,7 @@ You need Go 1.22+ and git on PATH.
 
 ## What we're not looking for (yet)
 
-- New scanner engines. Sentinel does attribution, not vulnerability detection.
+- New scanner engines. Auteur does attribution, not vulnerability detection.
 - Dashboards, web UIs, telemetry.
 - Rewrites of the ledger format.
 

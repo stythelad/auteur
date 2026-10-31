@@ -1,5 +1,5 @@
-BINARY := sentinel
-PKG    := ./cmd/sentinel
+BINARY := auteur
+PKG    := ./cmd/auteur
 PREFIX ?= $(HOME)/.local
 
 .PHONY: all build test fmt vet install clean
