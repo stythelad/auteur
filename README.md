@@ -2,6 +2,8 @@
 
 **Provenance ledger for AI-authored code.**
 
+![Auteur demo](docs/demo.gif)
+
 git blame tells you *who* wrote a line. Auteur tells you *whether it was
 a human or a model* — and which model, session, and prompt hash produced it.
 
