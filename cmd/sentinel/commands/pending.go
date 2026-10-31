@@ -15,7 +15,7 @@ func NewPendingCmd() *cobra.Command {
 		Use:   "pending",
 		Short: "Inspect pending provenance records",
 	}
-	cmd.AddCommand(newPendingListCmd(), newPendingShowCmd())
+	cmd.AddCommand(newPendingListCmd(), newPendingShowCmd(), NewPendingGCCmd())
 	return cmd
 }
 

@@ -47,9 +47,19 @@ func NewInitCmd() *cobra.Command {
 				}
 			}
 
+			installed, hErr := installPostCommitHook(root, force)
+			if hErr != nil {
+				return hErr
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "initialized Sentinel at %s\n", root)
 			fmt.Fprintf(cmd.OutOrStdout(), "  ledger: %s\n", store.Path())
 			fmt.Fprintf(cmd.OutOrStdout(), "  config: %s\n", cfgPath)
+			if installed {
+				fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-commit (installed)\n")
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-commit (up to date)\n")
+			}
 			return nil
 		},
 	}
