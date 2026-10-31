@@ -15,6 +15,6 @@ answer "was this written by a model?"`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	cmd.AddCommand(NewInitCmd())
+	cmd.AddCommand(NewInitCmd(), NewBlameCmd())
 	return cmd
 }
