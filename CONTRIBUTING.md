@@ -5,7 +5,7 @@ issues and PRs are welcome.
 
 ## Development
 
-    git clone git@github.com:pokhrelmishan/auteur.git
+    git clone git@github.com:stythelad/auteur.git
     cd auteur
     make test
     make build

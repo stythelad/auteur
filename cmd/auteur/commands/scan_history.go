@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pokhrelmishan/auteur/internal/git"
-	"github.com/pokhrelmishan/auteur/internal/heuristic"
-	"github.com/pokhrelmishan/auteur/internal/provenance"
+	"github.com/stythelad/auteur/internal/git"
+	"github.com/stythelad/auteur/internal/heuristic"
+	"github.com/stythelad/auteur/internal/provenance"
 )
 
 func NewScanHistoryCmd() *cobra.Command {

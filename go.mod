@@ -1,4 +1,4 @@
-module github.com/pokhrelmishan/auteur
+module github.com/stythelad/auteur
 
 go 1.22
 

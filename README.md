@@ -29,7 +29,7 @@ result.*
 Auteur keeps a ledger of which line ranges in which commits were authored
 by an agent, and with what confidence:
 
-- high   — recorded by auteur wrap (the agent ran under Auteur)
+- high   — recorded by `auteur wrap` (the agent ran under Auteur)
 - medium — inferred from Co-authored-by trailers in the commit message
 - low    — reserved for future heuristics
 - unknown — never assume human; absence of a record means unknown
@@ -39,11 +39,11 @@ your repo. No server, no database, no telemetry.
 
 ## Install
 
-    go install github.com/pokhrelmishan/auteur/cmd/auteur@latest
+    go install github.com/stythelad/auteur/cmd/auteur@latest
 
 Or build from source:
 
-    git clone git@github.com:pokhrelmishan/auteur.git
+    git clone git@github.com:stythelad/auteur.git
     cd auteur
     make install
 
@@ -105,7 +105,7 @@ require_provenance. At least one must be set per rule.
 
 Path matching supports *, ?, and ** (multi-segment).
 
-auteur check --since <ref> only checks commits not reachable from <ref>,
+`auteur check --since <ref>` only checks commits not reachable from `<ref>`,
 which is what you want in CI.
 
 ## CI integration
@@ -124,7 +124,7 @@ GitHub Actions:
           - uses: actions/setup-go@v5
             with:
               go-version: '1.22'
-          - run: go install github.com/pokhrelmishan/auteur/cmd/auteur@latest
+          - run: go install github.com/stythelad/auteur/cmd/auteur@latest
           - run: auteur check --since origin/${{ github.base_ref }}
 
 fetch-depth: 0 is required so Auteur can see the base branch history.
@@ -133,16 +133,16 @@ fetch-depth: 0 is required so Auteur can see the base branch history.
 
 | Command | Purpose |
 |---|---|
-| auteur init | Create ledger, config, policy, install post-commit hook |
-| auteur wrap -- <cmd> | Run a command and record its line changes as pending |
-| auteur blame <file>:<line> | Show provenance for a single line |
-| auteur check | Evaluate policy against the ledger |
-| auteur scan-history | Bootstrap records from commit trailers |
-| auteur pending list | Show unresolved pending records |
-| auteur pending show <uuid> | Inspect a single pending record |
-| auteur pending gc | Prune stale pending records |
-| auteur resolve-pending | Resolve pending records to HEAD |
-| auteur rewrite <old> <new> | Copy attribution to rewritten SHAs (manual) |
+| `auteur init` | Create ledger, config, policy, install post-commit hook |
+| `auteur wrap -- <cmd>` | Run a command and record its line changes as pending |
+| `auteur blame <file>:<line>` | Show provenance for a single line |
+| `auteur check` | Evaluate policy against the ledger |
+| `auteur scan-history` | Bootstrap records from commit trailers |
+| `auteur pending list` | Show unresolved pending records |
+| `auteur pending show <uuid>` | Inspect a single pending record |
+| `auteur pending gc` | Prune stale pending records |
+| `auteur resolve-pending` | Resolve pending records to HEAD |
+| `auteur rewrite <old> <new>` | Copy attribution to rewritten SHAs (manual) |
 
 ## Design notes
 
