@@ -78,7 +78,7 @@ Exits non-zero on violations.
 
 ## Policy
 
-.auteur/policy.yaml supports three rule types:
+.auteur/policy.yaml supports four rule types:
 
     version: 1
     rules:
@@ -93,6 +93,13 @@ Exits non-zero on violations.
       - name: ci-must-have-passed
         paths: ["**"]
         require_ci_passed: true
+
+      - name: provenance-required-in-sensitive-areas
+        paths: ["auth/**", "payments/**"]
+        require_provenance: true
+
+Rule fields: require_human_signoff, forbid_agent_authored, require_ci_passed,
+require_provenance. At least one must be set per rule.
 
 Path matching supports *, ?, and ** (multi-segment).
 
@@ -133,6 +140,7 @@ fetch-depth: 0 is required so Auteur can see the base branch history.
 | auteur pending show <uuid> | Inspect a single pending record |
 | auteur pending gc | Prune stale pending records |
 | auteur resolve-pending | Resolve pending records to HEAD |
+| auteur rewrite <old> <new> | Copy attribution to rewritten SHAs (manual) |
 
 ## Design notes
 
@@ -161,14 +169,14 @@ real signal, but it's not the same as a wrap-recorded high.
 - [x] Post-commit hook to resolve pending records
 - [x] Policy engine (check)
 - [x] Trailer-based history scan
-- [ ] Rebase survival for pending records
+- [x] Rebase survival for pending records (v0.2)
 - [ ] Editor integration (VS Code, Neovim)
 - [ ] Agent-native SDK
 - [ ] blame --format=oneline for scripting
 
 ## Status
 
-v0.1 — usable, opinionated, early. Breaking changes possible before v1.
+v0.2 — usable, opinionated, early. Breaking changes possible before v1.
 
 ## Prior art
 
@@ -180,8 +188,21 @@ Auteur is not the only line-level AI attribution tool. Worth knowing about:
 - agentdiff — ed25519-signed records
 
 Auteur differentiates on: explicit confidence tiers, a policy engine for
-CI gating, and a both-ways approach (wrap for high confidence, trailers
-for medium).
+CI gating, rebase/amend survival, and a both-ways approach (wrap for high
+confidence, trailers for medium).
+
+## Known footguns
+
+**Stale binary + silent hooks.** The git hooks installed by `auteur init`
+call `auteur` from `$PATH`. After upgrading Auteur, rebuild and re-install
+the binary; otherwise hooks silently no-op (`|| true`). If attribution
+isn't appearing after a commit, run `auteur resolve-pending --verbose`
+manually and check `which auteur` points at the new build.
+
+**Ledger commits and rebases.** `.auteur/provenance.jsonl` is a tracked
+file. If you commit it on a feature branch and then rebase, git may
+complain about local changes. Either `git rebase --autostash`, or add
+`.auteur/` to `.gitignore` during development and commit it periodically.
 
 ## License
 
