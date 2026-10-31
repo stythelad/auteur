@@ -30,6 +30,7 @@ func newRepo(t *testing.T) *repo {
 		"GIT_CONFIG_SYSTEM=/dev/null",
 	)
 	r.git("init", "-q", "-b", "main")
+	r.write(".gitignore", ".auteur/\n")
 	return r
 }
 

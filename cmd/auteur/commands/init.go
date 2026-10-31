@@ -12,7 +12,6 @@ import (
 	"github.com/pokhrelmishan/auteur/internal/provenance"
 )
 
-// NewInitCmd returns the `sentinel init` subcommand.
 func NewInitCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
@@ -48,11 +47,6 @@ func NewInitCmd() *cobra.Command {
 				}
 			}
 
-			installed, hErr := installPostCommitHook(root, force)
-			if hErr != nil {
-				return hErr
-			}
-
 			policyPath := root + "/" + policy.Path
 			if _, pErr := os.Stat(policyPath); os.IsNotExist(pErr) {
 				if sErr := policy.Save(root, policy.Default()); sErr != nil {
@@ -60,17 +54,25 @@ func NewInitCmd() *cobra.Command {
 				}
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "initialized Sentinel at %s\n", root)
+			pcInstalled, prInstalled, hErr := installHooks(root, force)
+			if hErr != nil {
+				return hErr
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "initialized Auteur at %s\n", root)
 			fmt.Fprintf(cmd.OutOrStdout(), "  ledger: %s\n", store.Path())
 			fmt.Fprintf(cmd.OutOrStdout(), "  config: %s\n", cfgPath)
-			if installed {
-				fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-commit (installed)\n")
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-commit (up to date)\n")
+			hookStatus := func(installed bool) string {
+				if installed {
+					return "installed"
+				}
+				return "up to date"
 			}
+			fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-commit (%s)\n", hookStatus(pcInstalled))
+			fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-rewrite (%s)\n", hookStatus(prInstalled))
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing ledger and config")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing ledger, config, and hooks")
 	return cmd
 }

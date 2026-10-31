@@ -14,7 +14,6 @@ func TestHappyPath(t *testing.T) {
 
 	r.mustRun("init")
 
-	// The wrapped command IS the agent: it edits the file during wrap.
 	out := r.mustRun("wrap", "--agent", "claude-code", "--model", "claude-opus-5.5", "--",
 		"sh", "-c", "echo 'func evil() {}' >> auth/login.py")
 	if !strings.Contains(out, "recorded pending") {
@@ -23,13 +22,11 @@ func TestHappyPath(t *testing.T) {
 
 	sha := r.commitAll("agent changes")
 
-	// After commit, pending resolves.
 	out = r.mustRun("pending", "list")
 	if !strings.Contains(out, "no pending records") {
 		t.Fatalf("pending not resolved: %s", out)
 	}
 
-	// Blame shows the real commit, not pending.
 	out = r.mustRun("blame", "auth/login.py:2")
 	if !strings.Contains(out, sha[:7]) {
 		t.Fatalf("blame missing real sha %s: %s", sha[:7], out)
@@ -104,7 +101,6 @@ func TestCheckFailsOnMissingLedger(t *testing.T) {
 	r := newRepo(t)
 	r.write("a.txt", "x\n")
 	r.commitAll("initial")
-	// Deliberately no init — no .auteur/provenance.jsonl.
 
 	out, err := r.run("check")
 	if err == nil {
@@ -114,7 +110,6 @@ func TestCheckFailsOnMissingLedger(t *testing.T) {
 		t.Fatalf("expected ledger-not-found error: %s", out)
 	}
 
-	// With --allow-missing-ledger it should pass.
 	if _, err := r.run("check", "--allow-missing-ledger"); err != nil {
 		t.Fatalf("allow-missing-ledger should pass: %v", err)
 	}
@@ -126,7 +121,6 @@ func TestCheckFailsOnMalformedPolicy(t *testing.T) {
 	r.commitAll("initial")
 	r.mustRun("init")
 
-	// Corrupt the policy: unknown field + missing booleans.
 	policyPath := filepath.Join(r.dir, ".auteur", "policy.yaml")
 	if err := os.WriteFile(policyPath, []byte("version: 1\nrules:\n  - name: r\n    paths: [\"a/**\"]\n    require_human_singoff: true\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -155,10 +149,53 @@ func TestWrapNoChanges(t *testing.T) {
 	}
 }
 
-func TestAmendOrphansPending(t *testing.T) {
-	t.Skip("known limitation: amend orphans pending records; fixed in a later session")
+func TestAmendPreservesAttribution(t *testing.T) {
+	r := newRepo(t)
+	r.write("auth/login.py", "func login() {}\n")
+	r.commitAll("initial")
+	r.mustRun("init")
+
+	r.mustRun("wrap", "--agent", "claude-code", "--",
+		"sh", "-c", "echo 'func evil() {}' >> auth/login.py")
+	r.commitAll("agent changes")
+
+	// Amend the commit; post-rewrite should copy the record to the new SHA.
+	r.git("commit", "--amend", "-q", "--no-edit")
+	newSHA := r.git("rev-parse", "HEAD")
+
+	out := r.mustRun("blame", "auth/login.py:2")
+	if !strings.Contains(out, newSHA[:7]) {
+		t.Fatalf("blame should show amended SHA %s: %s", newSHA[:7], out)
+	}
+	if !strings.Contains(out, "confidence: high") {
+		t.Fatalf("confidence lost after amend: %s", out)
+	}
 }
 
-func TestRebaseOrphansPending(t *testing.T) {
-	t.Skip("known limitation: rebase orphans pending records; fixed in a later session")
+func TestRebasePreservesAttribution(t *testing.T) {
+	r := newRepo(t)
+	r.write("a.txt", "base\n")
+	r.commitAll("base")
+
+	r.git("checkout", "-q", "-b", "feature")
+	r.mustRun("init")
+	r.mustRun("wrap", "--agent", "claude-code", "--",
+		"sh", "-c", "echo 'feature' >> a.txt")
+	r.commitAll("agent feature")
+
+	r.git("checkout", "-q", "main")
+	r.write("b.txt", "main\n")
+	r.commitAll("main advance")
+
+	r.git("checkout", "-q", "feature")
+	r.git("rebase", "-q", "main")
+	newSHA := r.git("rev-parse", "HEAD")
+
+	out := r.mustRun("blame", "a.txt:2")
+	if !strings.Contains(out, newSHA[:7]) {
+		t.Fatalf("blame should show rebased SHA %s after rebase: %s", newSHA[:7], out)
+	}
+	if !strings.Contains(out, "confidence: high") {
+		t.Fatalf("confidence lost after rebase: %s", out)
+	}
 }

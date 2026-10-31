@@ -12,25 +12,43 @@ if command -v auteur >/dev/null 2>&1; then
 fi
 `
 
-// installPostCommitHook writes the hook into .git/hooks/post-commit
-// relative to the given repo root. Idempotent: skips if an identical
-// hook is already present, errors if a different hook is.
-func installPostCommitHook(repoRoot string, force bool) (installed bool, err error) {
-	hookPath := filepath.Join(repoRoot, ".git", "hooks", "post-commit")
-	existing, readErr := os.ReadFile(hookPath)
+const postRewriteHook = `#!/bin/sh
+if command -v auteur >/dev/null 2>&1; then
+  auteur rewrite --stdin >/dev/null 2>&1 || true
+fi
+`
+
+// installHooks writes the post-commit and post-rewrite hooks into .git/hooks.
+// Idempotent: skips hooks that already match, errors on conflicting hooks
+// unless force is set. Returns (postCommitInstalled, postRewriteInstalled, error).
+func installHooks(repoRoot string, force bool) (bool, bool, error) {
+	pc, err := installOneHook(repoRoot, "post-commit", postCommitHook, force)
+	if err != nil {
+		return false, false, err
+	}
+	pr, err := installOneHook(repoRoot, "post-rewrite", postRewriteHook, force)
+	if err != nil {
+		return pc, false, err
+	}
+	return pc, pr, nil
+}
+
+func installOneHook(repoRoot, name, content string, force bool) (installed bool, err error) {
+	path := filepath.Join(repoRoot, ".git", "hooks", name)
+	existing, readErr := os.ReadFile(path)
 	if readErr == nil {
-		if string(existing) == postCommitHook {
+		if string(existing) == content {
 			return false, nil
 		}
 		if !force {
-			return false, fmt.Errorf("existing post-commit hook differs; use --force to overwrite")
+			return false, fmt.Errorf("existing %s hook differs; use --force to overwrite", name)
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(hookPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, fmt.Errorf("create hooks dir: %w", err)
 	}
-	if err := os.WriteFile(hookPath, []byte(postCommitHook), 0o755); err != nil {
-		return false, fmt.Errorf("write hook: %w", err)
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		return false, fmt.Errorf("write %s hook: %w", name, err)
 	}
 	return true, nil
 }
