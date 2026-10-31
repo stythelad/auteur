@@ -17,7 +17,7 @@ func NewInitCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a Sentinel provenance ledger in the current repo",
+		Short: "Initialize an Auteur provenance ledger in the current repo",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
