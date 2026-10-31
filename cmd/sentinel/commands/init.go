@@ -8,6 +8,7 @@ import (
 
 	"github.com/pokhrelmishan/sentinel/internal/config"
 	"github.com/pokhrelmishan/sentinel/internal/git"
+	"github.com/pokhrelmishan/sentinel/internal/policy"
 	"github.com/pokhrelmishan/sentinel/internal/provenance"
 )
 
@@ -50,6 +51,13 @@ func NewInitCmd() *cobra.Command {
 			installed, hErr := installPostCommitHook(root, force)
 			if hErr != nil {
 				return hErr
+			}
+
+			policyPath := root + "/" + policy.Path
+			if _, pErr := os.Stat(policyPath); os.IsNotExist(pErr) {
+				if sErr := policy.Save(root, policy.Default()); sErr != nil {
+					return sErr
+				}
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "initialized Sentinel at %s\n", root)
