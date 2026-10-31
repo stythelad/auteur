@@ -15,13 +15,20 @@ type Violation struct {
 	Reason string `json:"reason"`
 }
 
+// Options controls Check behavior.
+type Options struct {
+	// SkipCommits are commit SHAs to ignore (the --since base).
+	SkipCommits map[string]bool
+	// Strict makes unknown-origin lines fail in protected paths.
+	// Default true; callers pass false for --no-strict.
+	Strict bool
+}
+
 // Check evaluates every record against every rule.
-// skipCommits is a set of commit SHAs to ignore (the --since base).
-// strict additionally flags unknown-origin lines under rule paths.
-func Check(records []provenance.Record, p Policy, skipCommits map[string]bool, strict bool) []Violation {
+func Check(records []provenance.Record, p Policy, opts Options) []Violation {
 	var out []Violation
 	for _, rec := range records {
-		if skipCommits[rec.Commit] {
+		if opts.SkipCommits[rec.Commit] {
 			continue
 		}
 		for _, rule := range p.Rules {
@@ -29,7 +36,7 @@ func Check(records []provenance.Record, p Policy, skipCommits map[string]bool, s
 				if !AnyMatch(rule.Paths, lr.File) {
 					continue
 				}
-				if v, ok := evaluate(rule, lr, rec, strict); ok {
+				if v, ok := evaluate(rule, lr, rec, opts); ok {
 					out = append(out, v)
 				}
 			}
@@ -38,7 +45,13 @@ func Check(records []provenance.Record, p Policy, skipCommits map[string]bool, s
 	return out
 }
 
-func evaluate(rule Rule, lr provenance.LineRange, rec provenance.Record, strict bool) (Violation, bool) {
+// isAgentLike reports whether an origin counts as agent-authored for
+// policy purposes. Mixed contains agent code; treat it as agent.
+func isAgentLike(o provenance.Origin) bool {
+	return o == provenance.OriginAgent || o == provenance.OriginMixed
+}
+
+func evaluate(rule Rule, lr provenance.LineRange, rec provenance.Record, opts Options) (Violation, bool) {
 	mk := func(reason string) (Violation, bool) {
 		return Violation{
 			Rule:   rule.Name,
@@ -50,30 +63,34 @@ func evaluate(rule Rule, lr provenance.LineRange, rec provenance.Record, strict 
 		}, true
 	}
 
-	if rule.ForbidAgentAuthored && lr.Origin == provenance.OriginAgent {
+	agentLike := isAgentLike(lr.Origin)
+
+	if rule.ForbidAgentAuthored && agentLike {
 		return mk("agent-authored lines are forbidden in this path")
 	}
-
-	if rule.RequireHumanSignoff && lr.Origin == provenance.OriginAgent {
+	if rule.RequireHumanSignoff && agentLike {
 		if len(rec.Review.HumanSignoff) == 0 {
 			return mk("agent-authored lines require human signoff; none recorded")
 		}
 	}
-
-	if rule.RequireCIPassed && lr.Origin == provenance.OriginAgent {
+	if rule.RequireCIPassed && agentLike {
 		if !rec.Review.CIPassed {
 			return mk("agent-authored lines require a passing CI run; none recorded")
 		}
 	}
+	if rule.RequireProvenance && lr.Origin == provenance.OriginUnknown {
+		return mk("provenance is unknown in a path that requires it")
+	}
 
-	if strict && lr.Origin == provenance.OriginUnknown {
+	// Default-on strict mode: unknown-origin lines in any rule's paths
+	// fail unless the caller opts out.
+	if opts.Strict && lr.Origin == provenance.OriginUnknown {
 		return mk(fmt.Sprintf("unknown-origin lines flagged in strict mode (rule %s)", rule.Name))
 	}
 
 	return Violation{}, false
 }
 
-// Summarize returns a short human summary of violations, grouped by rule.
 func Summarize(vs []Violation) string {
 	if len(vs) == 0 {
 		return "no violations"

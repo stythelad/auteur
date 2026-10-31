@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -14,10 +15,11 @@ import (
 
 func NewCheckCmd() *cobra.Command {
 	var (
-		asJSON bool
-		since  string
-		prBase string
-		strict bool
+		asJSON             bool
+		since              string
+		prBase             string
+		noStrict           bool
+		allowMissingLedger bool
 	)
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -44,9 +46,14 @@ func NewCheckCmd() *cobra.Command {
 				}
 			}
 
-			recs, err := provenance.Open(root).Load()
+			store := provenance.Open(root)
+			ledgerMissing := !fileExists(store.Path())
+			recs, err := store.Load()
 			if err != nil {
 				return err
+			}
+			if ledgerMissing && !allowMissingLedger {
+				return errors.New("provenance ledger not found; run `auteur init` and `auteur scan-history`, or pass --allow-missing-ledger")
 			}
 
 			pol, err := policy.Load(root)
@@ -54,7 +61,10 @@ func NewCheckCmd() *cobra.Command {
 				return err
 			}
 
-			vs := policy.Check(recs, pol, skipSet, strict)
+			vs := policy.Check(recs, pol, policy.Options{
+				SkipCommits: skipSet,
+				Strict:      !noStrict,
+			})
 
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
@@ -82,8 +92,14 @@ func NewCheckCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON")
 	cmd.Flags().StringVar(&since, "since", "", "only check commits not reachable from this ref")
 	cmd.Flags().StringVar(&prBase, "pr-base", "", "shorthand for --since origin/<branch>")
-	cmd.Flags().BoolVar(&strict, "strict", false, "flag unknown-origin lines in protected paths")
+	cmd.Flags().BoolVar(&noStrict, "no-strict", false, "do not fail on unknown-origin lines by default")
+	cmd.Flags().BoolVar(&allowMissingLedger, "allow-missing-ledger", false, "pass even if .auteur/provenance.jsonl is missing")
 	return cmd
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 func splitLines(s string) []string {

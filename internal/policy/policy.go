@@ -16,6 +16,7 @@ type Rule struct {
 	RequireHumanSignoff bool     `yaml:"require_human_signoff,omitempty"`
 	ForbidAgentAuthored bool     `yaml:"forbid_agent_authored,omitempty"`
 	RequireCIPassed     bool     `yaml:"require_ci_passed,omitempty"`
+	RequireProvenance   bool     `yaml:"require_provenance,omitempty"`
 }
 
 type Policy struct {
@@ -41,6 +42,7 @@ func Default() Policy {
 	}
 }
 
+// Load reads and validates a policy file. Returns Default if missing.
 func Load(repoRoot string) (Policy, error) {
 	raw, err := os.ReadFile(repoRoot + "/" + Path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -50,10 +52,39 @@ func Load(repoRoot string) (Policy, error) {
 		return Policy{}, fmt.Errorf("read policy: %w", err)
 	}
 	var p Policy
-	if err := yaml.Unmarshal(raw, &p); err != nil {
+	dec := yaml.NewDecoder(bytesReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&p); err != nil {
 		return Policy{}, fmt.Errorf("parse policy: %w", err)
 	}
+	if err := p.Validate(); err != nil {
+		return Policy{}, fmt.Errorf("invalid policy: %w", err)
+	}
 	return p, nil
+}
+
+// Validate checks structural invariants that YAML decoding can't catch.
+func (p Policy) Validate() error {
+	if p.Version != 1 {
+		return fmt.Errorf("unsupported policy version %d (want 1)", p.Version)
+	}
+	seen := map[string]bool{}
+	for i, r := range p.Rules {
+		if r.Name == "" {
+			return fmt.Errorf("rule %d: name is required", i)
+		}
+		if seen[r.Name] {
+			return fmt.Errorf("rule %q: duplicate name", r.Name)
+		}
+		seen[r.Name] = true
+		if len(r.Paths) == 0 {
+			return fmt.Errorf("rule %q: paths must be non-empty", r.Name)
+		}
+		if !r.RequireHumanSignoff && !r.ForbidAgentAuthored && !r.RequireCIPassed && !r.RequireProvenance {
+			return fmt.Errorf("rule %q: at least one of require_human_signoff, forbid_agent_authored, require_ci_passed, require_provenance must be true", r.Name)
+		}
+	}
+	return nil
 }
 
 func Save(repoRoot string, p Policy) error {
