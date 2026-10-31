@@ -7,10 +7,8 @@ import (
 	"testing"
 )
 
-// binaryPath is built once by TestMain.
 var binaryPath string
 
-// repo is a temp repo with auteur initialized.
 type repo struct {
 	t   *testing.T
 	dir string
@@ -21,7 +19,12 @@ func newRepo(t *testing.T) *repo {
 	t.Helper()
 	dir := t.TempDir()
 	r := &repo{t: t, dir: dir}
+	// Prepend the directory containing our compiled binary to PATH.
+	// This ensures the git hooks use the exact binary we just built,
+	// not a stale one on the system or nothing at all.
+	binDir := filepath.Dir(binaryPath)
 	r.env = append(os.Environ(),
+		"PATH="+binDir+":"+os.Getenv("PATH"),
 		"GIT_AUTHOR_NAME=test",
 		"GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=test",
@@ -34,7 +37,6 @@ func newRepo(t *testing.T) *repo {
 	return r
 }
 
-// git runs a git command in the repo and fails the test on error.
 func (r *repo) git(args ...string) string {
 	r.t.Helper()
 	out, err := r.gitErr(args...)
@@ -52,7 +54,6 @@ func (r *repo) gitErr(args ...string) (string, error) {
 	return string(out), err
 }
 
-// run runs the auteur binary in the repo and returns stdout+stderr.
 func (r *repo) run(args ...string) (string, error) {
 	r.t.Helper()
 	cmd := exec.Command(binaryPath, args...)
@@ -62,7 +63,6 @@ func (r *repo) run(args ...string) (string, error) {
 	return string(out), err
 }
 
-// mustRun runs auteur and fails the test on error.
 func (r *repo) mustRun(args ...string) string {
 	r.t.Helper()
 	out, err := r.run(args...)
@@ -72,7 +72,6 @@ func (r *repo) mustRun(args ...string) string {
 	return out
 }
 
-// write writes a file relative to the repo root.
 func (r *repo) write(path, content string) {
 	r.t.Helper()
 	full := filepath.Join(r.dir, path)
@@ -84,7 +83,6 @@ func (r *repo) write(path, content string) {
 	}
 }
 
-// appendTo appends content to a file.
 func (r *repo) appendTo(path, content string) {
 	r.t.Helper()
 	f, err := os.OpenFile(filepath.Join(r.dir, path), os.O_APPEND|os.O_WRONLY, 0o644)
@@ -97,7 +95,6 @@ func (r *repo) appendTo(path, content string) {
 	}
 }
 
-// commitAll stages everything and commits with the given message.
 func (r *repo) commitAll(msg string, extra ...string) string {
 	r.t.Helper()
 	r.git("add", "-A")
@@ -120,5 +117,8 @@ func TestMain(m *testing.M) {
 		panic("build failed: " + string(out))
 	}
 	binaryPath = bin
+
+	// We also need to make sure the `go` command itself is reachable
+	// when we build inside TestMain, but that's already in os.Environ.
 	os.Exit(m.Run())
 }
