@@ -643,23 +643,10 @@ func TestHookAgentPreSpecialFiles(t *testing.T) {
 	}
 
 	payload := `{"tool_input": {"file_path": "` + fifoPath + `"}}`
-	cmd := exec.Command(binaryPath, "hook-agent-pre", "claude-code")
-	cmd.Dir = r.dir
-	cmd.Env = r.env
-	cmd.Stdin = strings.NewReader(payload)
-
-	// Set a timeout to ensure it doesn't hang
-	done := make(chan bool)
-	go func() {
-		cmd.Run()
-		done <- true
-	}()
-
-	select {
-	case <-done:
-		// Good, it didn't hang
-	case <-time.After(3 * time.Second):
-		t.Fatalf("SECURITY FAILURE: hook hung on FIFO")
+	_, err := runWithTimeout(t, 3*time.Second, r.dir, payload, "hook-agent-pre", "claude-code")
+	if err != nil {
+		// Hook returns exit 0 even on refusal, but if it hung, runWithTimeout would have failed
+		_ = err
 	}
 
 	// Verify no snapshot was created for the FIFO
@@ -676,11 +663,7 @@ func TestHookAgentPreSpecialFiles(t *testing.T) {
 	dirPath := filepath.Join(r.dir, "evil_dir")
 	os.MkdirAll(dirPath, 0o755)
 	payload = `{"tool_input": {"file_path": "` + dirPath + `"}}`
-	cmd = exec.Command(binaryPath, "hook-agent-pre", "claude-code")
-	cmd.Dir = r.dir
-	cmd.Env = r.env
-	cmd.Stdin = strings.NewReader(payload)
-	out, _ := cmd.CombinedOutput()
+	out, _ := runWithTimeout(t, 3*time.Second, r.dir, payload, "hook-agent-pre", "claude-code")
 	if !strings.Contains(string(out), "refusing to read non-regular file") {
 		t.Fatalf("expected directory rejection, got: %s", out)
 	}
@@ -689,11 +672,7 @@ func TestHookAgentPreSpecialFiles(t *testing.T) {
 	normalPath := filepath.Join(r.dir, "normal.txt")
 	r.write("normal.txt", "hello normal")
 	payload = `{"tool_input": {"file_path": "` + normalPath + `"}}`
-	cmd = exec.Command(binaryPath, "hook-agent-pre", "claude-code")
-	cmd.Dir = r.dir
-	cmd.Env = r.env
-	cmd.Stdin = strings.NewReader(payload)
-	out, _ = cmd.CombinedOutput()
+	out, _ = runWithTimeout(t, 3*time.Second, r.dir, payload, "hook-agent-pre", "claude-code")
 	if strings.Contains(string(out), "refusing") || strings.Contains(string(out), "error") {
 		t.Fatalf("expected success for normal file, got: %s", out)
 	}
@@ -709,11 +688,7 @@ func TestHookAgentPreSpecialFiles(t *testing.T) {
 	os.Symlink(outsideFile, linkPath)
 
 	payload = `{"tool_input": {"file_path": "` + linkPath + `"}}`
-	cmd = exec.Command(binaryPath, "hook-agent-pre", "claude-code")
-	cmd.Dir = r.dir
-	cmd.Env = r.env
-	cmd.Stdin = strings.NewReader(payload)
-	out, _ = cmd.CombinedOutput()
+	out, _ = runWithTimeout(t, 3*time.Second, r.dir, payload, "hook-agent-pre", "claude-code")
 	if !strings.Contains(string(out), "outside the repository") && !strings.Contains(string(out), "refusing to follow symlink") {
 		t.Fatalf("expected symlink rejection, got: %s", out)
 	}

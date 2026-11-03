@@ -1,11 +1,32 @@
 package test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
+
+func runWithTimeout(t *testing.T, timeout time.Duration, dir string, stdin string, args ...string) (string, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Dir = dir
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatalf("SECURITY FAILURE: command %v timed out after %v (likely hung)", args, timeout)
+	}
+	return string(out), err
+}
 
 var binaryPath string
 

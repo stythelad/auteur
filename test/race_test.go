@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestTOCTOURaceParentDirectory(t *testing.T) {
@@ -29,13 +30,11 @@ func TestTOCTOURaceParentDirectory(t *testing.T) {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
 
-	// The real directory and file inside the repo
 	realDir := filepath.Join(repoDir, "src")
 	os.MkdirAll(realDir, 0o755)
 	realFile := filepath.Join(realDir, "file.txt")
 	os.WriteFile(realFile, []byte("safe"), 0o644)
 
-	// The outside directory and file
 	outsideDir := filepath.Join(tmpDir, "outside")
 	os.MkdirAll(outsideDir, 0o755)
 	outsideMarker := "OUTSIDE_SECRET_MARKER"
@@ -45,7 +44,6 @@ func TestTOCTOURaceParentDirectory(t *testing.T) {
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 
-	// Goroutine: repeatedly swap realDir with a symlink to outsideDir
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -67,19 +65,14 @@ func TestTOCTOURaceParentDirectory(t *testing.T) {
 	snapDir := filepath.Join(repoDir, ".git", "auteur", "snapshots")
 	ledgerPath := filepath.Join(repoDir, ".git", "auteur", "provenance.jsonl")
 
-	// Run hook many times and inspect snapshots each time
 	for i := 0; i < 500; i++ {
 		payload := `{"tool_input": {"file_path": "` + realFile + `"}}`
-		cmd := exec.Command(binaryPath, "hook-agent-pre", "claude-code")
-		cmd.Dir = repoDir
-		cmd.Stdin = strings.NewReader(payload)
-		out, _ := cmd.CombinedOutput()
+		out, _ := runWithTimeout(t, 2*time.Second, repoDir, payload, "hook-agent-pre", "claude-code")
 
-		if strings.Contains(string(out), "panic") {
-			t.Fatalf("hook panicked: %s", out)
+		if strings.Contains(out, "panic") {
+			t.Fatalf("hook panicked during race: %s", out)
 		}
 
-		// Inspect all snapshots for the outside marker
 		entries, _ := os.ReadDir(snapDir)
 		for _, e := range entries {
 			content, _ := os.ReadFile(filepath.Join(snapDir, e.Name()))
@@ -88,7 +81,6 @@ func TestTOCTOURaceParentDirectory(t *testing.T) {
 			}
 		}
 
-		// Verify no provenance records were created (since only pre-hook ran)
 		if data, err := os.ReadFile(ledgerPath); err == nil && len(data) > 0 {
 			t.Fatalf("expected no provenance records, found: %s", data)
 		}
@@ -114,34 +106,26 @@ func TestTOCTOURaceRejectedReadsCreateNoRecords(t *testing.T) {
 	cmd.Dir = repoDir
 	cmd.Run()
 
-	// Create an outside directory with a symlink inside the repo
 	outsideDir := filepath.Join(tmpDir, "outside")
 	os.MkdirAll(outsideDir, 0o755)
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
 	os.WriteFile(outsideFile, []byte("OUTSIDE_SECRET_MARKER"), 0o644)
 
-	// Symlink inside the repo pointing to the outside file
 	linkPath := filepath.Join(repoDir, "malicious.txt")
 	os.Symlink(outsideFile, linkPath)
 
-	// Run pre-hook (should be rejected)
 	payload := `{"tool_input": {"file_path": "` + linkPath + `"}}`
-	cmd = exec.Command(binaryPath, "hook-agent-pre", "claude-code")
-	cmd.Dir = repoDir
-	cmd.Stdin = strings.NewReader(payload)
-	out, _ := cmd.CombinedOutput()
+	out, _ := runWithTimeout(t, 2*time.Second, repoDir, payload, "hook-agent-pre", "claude-code")
 
-	if !strings.Contains(string(out), "outside the repository") && !strings.Contains(string(out), "refusing to follow symlink") {
+	if !strings.Contains(out, "outside the repository") && !strings.Contains(out, "refusing to follow symlink") {
 		t.Fatalf("expected rejection, got: %s", out)
 	}
 
-	// Ledger should be empty (no records created)
 	ledgerPath := filepath.Join(repoDir, ".git", "auteur", "provenance.jsonl")
 	if data, err := os.ReadFile(ledgerPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
 		t.Fatalf("expected no provenance records, found: %s", data)
 	}
 
-	// Snapshots dir should not contain any real content
 	snapDir := filepath.Join(repoDir, ".git", "auteur", "snapshots")
 	if entries, err := os.ReadDir(snapDir); err == nil {
 		for _, e := range entries {
