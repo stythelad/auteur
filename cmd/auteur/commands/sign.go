@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stythelad/auteur/internal/config"
 	"github.com/stythelad/auteur/internal/git"
 	"github.com/stythelad/auteur/internal/provenance"
 )
@@ -35,6 +36,22 @@ func NewSignCmd() *cobra.Command {
 				return fmt.Errorf("git user.name is not set")
 			}
 
+			// Check if the key is trusted before signing
+			pubKey, err := provenance.GetPublicKey(sshKey)
+			if err != nil {
+				return fmt.Errorf("read public key: %w", err)
+			}
+			trustRoot, err := config.LoadTrustRoot(root)
+			if err != nil {
+				return fmt.Errorf("load trust root: %w", err)
+			}
+			if len(trustRoot) > 0 {
+				trustedKey, ok := trustRoot[identity]
+				if !ok || trustedKey != pubKey {
+					return fmt.Errorf("your public key is not in the trusted signers list. run `auteur trust add %s %s.pub` first", identity, sshKey)
+				}
+			}
+
 			store := provenance.Open(root)
 			recs, err := store.Load()
 			if err != nil {
@@ -44,9 +61,6 @@ func NewSignCmd() *cobra.Command {
 			found := false
 			for i := range recs {
 				if recs[i].Commit == fullTargetSHA {
-					if len(recs[i].Review.Signoffs) > 0 {
-						return fmt.Errorf("commit %s is already signed; refusing to append a second signature", fullTargetSHA[:7])
-					}
 					if err := provenance.SignRecord(&recs[i], identity, sshKey); err != nil {
 						return fmt.Errorf("failed to sign record: %w", err)
 					}

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/stythelad/auteur/internal/git"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,10 +23,13 @@ type Privacy struct {
 }
 
 type Config struct {
-	Version        int               `yaml:"version"`
-	AgentNames     map[string]string `yaml:"agent_names,omitempty"`
-	Privacy        Privacy           `yaml:"privacy"`
-	TrustedSigners map[string]string `yaml:"trusted_signers,omitempty"`
+	Version    int               `yaml:"version"`
+	AgentNames map[string]string `yaml:"agent_names,omitempty"`
+	Privacy    Privacy           `yaml:"privacy"`
+}
+
+type TrustRoot struct {
+	TrustedSigners map[string]string `yaml:"trusted_signers"`
 }
 
 func Default() Config {
@@ -40,28 +46,10 @@ func Default() Config {
 			"codex":  "codex",
 			"cursor": "cursor",
 		},
-		TrustedSigners: map[string]string{}, // Empty by default (fails closed)
 	}
 }
 
 func Load(repoRoot string) (Config, error) {
-	// First, try to load the committed trust root (.auteur/allowed_signers)
-	trustRootPath := filepath.Join(repoRoot, TrustRootPath)
-	trustRaw, err := os.ReadFile(trustRootPath)
-	if err == nil {
-		var c Config
-		if err := yaml.Unmarshal(trustRaw, &c); err != nil {
-			return Config{}, fmt.Errorf("parse trust root %s: %w", TrustRootPath, err)
-		}
-		// Merge with defaults
-		def := Default()
-		if c.Privacy == (Privacy{}) {
-			c.Privacy = def.Privacy
-		}
-		return c, nil
-	}
-
-	// Fallback to local config
 	p := filepath.Join(repoRoot, Path)
 	raw, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
@@ -77,6 +65,27 @@ func Load(repoRoot string) (Config, error) {
 	return c, nil
 }
 
+func LoadTrustRoot(repoRoot string) (map[string]string, error) {
+	// Try to read from the working tree first
+	path := filepath.Join(repoRoot, TrustRootPath)
+	raw, err := os.ReadFile(path)
+	if err == nil {
+		var tr TrustRoot
+		if err := yaml.Unmarshal(raw, &tr); err != nil {
+			return nil, fmt.Errorf("parse trust root: %w", err)
+		}
+		return tr.TrustedSigners, nil
+	}
+
+	// If the file is missing, fail closed
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil // Return nil map to indicate "no trust root"
+	}
+
+	// If it exists but can't be read (e.g. it's a directory), fail
+	return nil, fmt.Errorf("read trust root %s: %w", TrustRootPath, err)
+}
+
 func Save(repoRoot string, c Config) error {
 	p := filepath.Join(repoRoot, Path)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -90,4 +99,23 @@ func Save(repoRoot string, c Config) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
+}
+
+// LoadTrustRootFromGit reads .auteur/allowed_signers from a specific git ref.
+// Used in CI to read the trust root from the base branch, not the PR head.
+func LoadTrustRootFromGit(repoRoot, ref string) (map[string]string, error) {
+	raw, err := git.Run(repoRoot, "show", ref+":"+TrustRootPath)
+	if err != nil {
+		// If the file doesn't exist on the base branch, return nil (fail closed)
+		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "exists on disk, but not in") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("git show %s:%s: %w", ref, TrustRootPath, err)
+	}
+
+	var tr TrustRoot
+	if err := yaml.Unmarshal([]byte(raw), &tr); err != nil {
+		return nil, fmt.Errorf("parse trust root from %s: %w", ref, err)
+	}
+	return tr.TrustedSigners, nil
 }

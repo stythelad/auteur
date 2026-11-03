@@ -15,6 +15,7 @@ import (
 
 func computeHash(r Record) string {
 	r.Hash = ""
+	r.PrevHash = "" // Exclude chain pointers from the record hash
 	saved := make([]Signoff, len(r.Review.Signoffs))
 	for i := range r.Review.Signoffs {
 		saved[i] = r.Review.Signoffs[i]

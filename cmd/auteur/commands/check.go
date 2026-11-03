@@ -21,6 +21,7 @@ func NewCheckCmd() *cobra.Command {
 		prBase             string
 		noStrict           bool
 		allowMissingLedger bool
+		ciBase             string
 	)
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -58,15 +59,39 @@ func NewCheckCmd() *cobra.Command {
 			}
 
 			if !allowMissingLedger {
+				var trustRoot map[string]string
+				if ciBase != "" {
+					trustRoot, err = config.LoadTrustRootFromGit(root, ciBase)
+					if err != nil {
+						return fmt.Errorf("load trust root from CI base: %w", err)
+					}
+				} else {
+					trustRoot, err = config.LoadTrustRoot(root)
+					if err != nil {
+						return fmt.Errorf("load trust root: %w", err)
+					}
+				}
+
 				if err := provenance.VerifyLedger(recs); err != nil {
 					return fmt.Errorf("security check failed: %w", err)
 				}
-				cfg, err := config.Load(root)
-				if err != nil {
-					return fmt.Errorf("load config: %w", err)
-				}
-				if err := provenance.VerifySignoffs(recs, cfg.TrustedSigners); err != nil {
+				if err := provenance.VerifySignoffs(recs, trustRoot); err != nil {
 					return fmt.Errorf("cryptographic verification failed: %w", err)
+				}
+
+				// Filter out untrusted signoffs before policy evaluation.
+				for i := range recs {
+					if len(trustRoot) == 0 {
+						recs[i].Review.Signoffs = nil
+					} else {
+						var trusted []provenance.Signoff
+						for _, s := range recs[i].Review.Signoffs {
+							if key, ok := trustRoot[s.Identity]; ok && key == s.PublicKey {
+								trusted = append(trusted, s)
+							}
+						}
+						recs[i].Review.Signoffs = trusted
+					}
 				}
 			}
 
@@ -114,6 +139,7 @@ func NewCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&prBase, "pr-base", "", "shorthand for --since origin/<branch>")
 	cmd.Flags().BoolVar(&noStrict, "no-strict", false, "do not fail on unknown-origin lines")
 	cmd.Flags().BoolVar(&allowMissingLedger, "allow-missing-ledger", false, "pass even if ledger is missing")
+	cmd.Flags().StringVar(&ciBase, "ci-base", "", "Read trust root from this git ref (e.g., origin/main) for CI")
 	return cmd
 }
 

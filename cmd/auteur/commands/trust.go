@@ -55,7 +55,9 @@ func NewTrustAddCmd() *cobra.Command {
 			tf.TrustedSigners = map[string]string{}
 
 			if raw, err := os.ReadFile(trustPath); err == nil {
-				yaml.Unmarshal(raw, &tf)
+				if err := yaml.Unmarshal(raw, &tf); err != nil {
+					return fmt.Errorf("parse trust file: %w", err)
+				}
 				if tf.TrustedSigners == nil {
 					tf.TrustedSigners = map[string]string{}
 				}

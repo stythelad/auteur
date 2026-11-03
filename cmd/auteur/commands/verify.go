@@ -32,11 +32,11 @@ func NewVerifyCmd() *cobra.Command {
 			}
 
 			integrityErr := provenance.VerifyLedger(recs)
-			cfg, err := config.Load(root)
+			trustRoot, err := config.LoadTrustRoot(root)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return fmt.Errorf("load trust root: %w", err)
 			}
-			authErr := provenance.VerifySignoffs(recs, cfg.TrustedSigners)
+			authErr := provenance.VerifySignoffs(recs, trustRoot)
 
 			fmt.Fprintf(cmd.OutOrStdout(), "=== Auteur Ledger Audit ===\n")
 			fmt.Fprintf(cmd.OutOrStdout(), "Total records: %d\n\n", len(recs))
