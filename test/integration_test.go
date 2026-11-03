@@ -389,3 +389,70 @@ func generateTestKey(t *testing.T, dir string) string {
 	}
 	return keyPath
 }
+
+func TestHookAgentPreRejectsPathTraversal(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+
+	// Attempt to trick the pre-hook into snapshotting /etc/passwd
+	payload := `{"tool_input": {"file_path": "` + filepath.Join(r.dir, "..", "..", "etc", "passwd") + `"}}`
+	cmd := exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+	cmd.Dir = r.dir
+	cmd.Env = r.env
+	cmd.Stdin = strings.NewReader(payload)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected hook to exit 0 (silently ignore), got: %v\n%s", err, out)
+	}
+
+	// The output should contain the refusal message
+	if !strings.Contains(string(out), "refusing to snapshot outside repo") {
+		t.Fatalf("expected traversal refusal message, got: %s", out)
+	}
+
+	// The snapshot directory should not exist (or be empty)
+	snapDir := filepath.Join(r.dir, ".git", "auteur", "snapshots")
+	if entries, err := os.ReadDir(snapDir); err == nil && len(entries) > 0 {
+		t.Fatalf("expected no snapshots to be created, found %d", len(entries))
+	}
+}
+
+func TestSnapshotHashCollisions(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+
+	// Create two files that would have collided under the old slash-to-underscore scheme
+	r.write("foo/bar", "content A")
+	r.write("foo_bar", "content B")
+
+	// Simulate pre-hooks for both
+	for _, file := range []string{"foo/bar", "foo_bar"} {
+		fullPath := filepath.Join(r.dir, file)
+		payload := `{"tool_input": {"file_path": "` + fullPath + `"}}`
+		cmd := exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+		cmd.Dir = r.dir
+		cmd.Env = r.env
+		cmd.Stdin = strings.NewReader(payload)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook-agent-pre: %v\n%s", err, out)
+		}
+	}
+
+	// Both snapshots should exist independently in the snapshots directory
+	snapDir := filepath.Join(r.dir, ".git", "auteur", "snapshots")
+	entries, err := os.ReadDir(snapDir)
+	if err != nil {
+		t.Fatalf("read snapshots dir: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 snapshots (no collision), found %d", len(entries))
+	}
+
+	// Verify contents are distinct
+	contentA, _ := os.ReadFile(filepath.Join(snapDir, entries[0].Name()))
+	contentB, _ := os.ReadFile(filepath.Join(snapDir, entries[1].Name()))
+	if string(contentA) == string(contentB) {
+		t.Fatalf("snapshot collision! both files had content: %s", contentA)
+	}
+}
