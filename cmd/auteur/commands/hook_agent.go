@@ -154,7 +154,7 @@ func NewHookAgentCmd() *cobra.Command {
 				return nil
 			}
 
-			afterContent, err := secureReadFile(realPath)
+			afterContent, err := secureReadFile(root, realPath)
 			if err != nil {
 				// File might have been deleted
 				return nil

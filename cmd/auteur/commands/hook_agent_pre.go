@@ -65,7 +65,7 @@ func NewHookAgentPreCmd() *cobra.Command {
 				return nil
 			}
 
-			content, err := secureReadFile(realPath)
+			content, err := secureReadFile(root, realPath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "auteur: error reading file securely: %v\n", err)
 				return nil
