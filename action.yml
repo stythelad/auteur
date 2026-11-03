@@ -1,0 +1,32 @@
+name: 'Auteur Provenance Check'
+description: 'Enforce AI provenance policies on pull requests'
+branding:
+  icon: 'shield'
+  color: 'purple'
+inputs:
+  base-ref:
+    description: 'The base branch to compare against (e.g., main)'
+    required: true
+  auteur-version:
+    description: 'The exact version of Auteur to install'
+    required: false
+    default: 'v0.5.3'
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+    
+    - name: Install Auteur
+      shell: bash
+      env:
+        AUTEUR_VERSION: ${{ inputs.auteur-version }}
+      run: go install github.com/stythelad/auteur/cmd/auteur@${AUTEUR_VERSION}
+    
+    - name: Run Auteur Check
+      shell: bash
+      env:
+        BASE_REF: ${{ inputs.base-ref }}
+      run: auteur check --ci-base "origin/$BASE_REF"
