@@ -11,7 +11,7 @@ import (
 
 const Path = ".git/auteur/config.yaml"
 
-// Config is the on-disk Sentinel configuration.
+// Config is the on-disk Auteur configuration.
 // v1 fields only; policy lives in a separate file later.
 type Config struct {
 	Version int `yaml:"version"`
@@ -20,7 +20,7 @@ type Config struct {
 	AgentNames map[string]string `yaml:"agent_names,omitempty"`
 }
 
-// Default returns the config written by `sentinel init`.
+// Default returns the config written by `auteur init`.
 func Default() Config {
 	return Config{
 		Version: 1,

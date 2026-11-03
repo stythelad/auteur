@@ -4,7 +4,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Root returns the top-level sentinel command.
+// Root returns the top-level auteur command.
 func Root() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auteur",

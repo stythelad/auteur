@@ -123,7 +123,7 @@ func NewWrapCmd() *cobra.Command {
 
 			fmt.Fprintf(cmd.OutOrStdout(), "recorded pending %s\n", uuid)
 			fmt.Fprintf(cmd.OutOrStdout(), "  files: %d  line ranges: %d\n", countFiles(ranges), len(ranges))
-			fmt.Fprintf(cmd.OutOrStdout(), "  view: sentinel pending show %s\n", uuid)
+			fmt.Fprintf(cmd.OutOrStdout(), "  view: auteur pending show %s\n", uuid)
 
 			if runErr != nil {
 				return runErr
