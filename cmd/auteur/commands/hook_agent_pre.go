@@ -59,19 +59,21 @@ func NewHookAgentPreCmd() *cobra.Command {
 				return nil
 			}
 
-			rel, err := safeRelPath(root, filePath)
+			realPath, err := safeRelPath(root, filePath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "auteur: refusing to snapshot outside repo: %v\n", err)
 				return nil
 			}
 
-			content, err := os.ReadFile(filePath)
+			content, err := secureReadFile(realPath)
 			if err != nil {
-				content = []byte{}
+				fmt.Fprintf(os.Stderr, "auteur: error reading file securely: %v\n", err)
+				return nil
 			}
 
 			snapDir := filepath.Join(root, ".git", "auteur", "snapshots")
 			os.MkdirAll(snapDir, 0o755)
+			rel, _ := filepath.Rel(root, realPath)
 			snapPath := snapshotPath(snapDir, rel)
 			os.WriteFile(snapPath, content, 0o644)
 			_ = agentName

@@ -4,83 +4,92 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // safeRelPath resolves the target path and ensures it is strictly inside the repository root.
-// It handles symlinks, non-existent files, and non-existent parent directories safely.
+// It returns the canonical, resolved path to be used for file access.
 func safeRelPath(root, target string) (string, error) {
-	// 1. Resolve the repo root to its canonical path.
 	realRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", fmt.Errorf("could not resolve repo root: %w", err)
 	}
-
-	// Ensure the root itself is absolute
 	realRoot, err = filepath.Abs(realRoot)
 	if err != nil {
 		return "", err
 	}
 
-	// 2. If the target itself exists (or is a symlink), resolve it fully.
+	// Try to resolve the full path first (handles symlinked files)
 	if realTarget, err := filepath.EvalSymlinks(target); err == nil {
 		realTarget, _ = filepath.Abs(realTarget)
 		return checkRel(realRoot, realTarget)
 	}
 
-	// 3. The target doesn't exist. Find the deepest existing parent.
+	// Target doesn't exist. Resolve the deepest existing parent.
 	dir := filepath.Dir(target)
+	base := filepath.Base(target)
 	var missingComponents []string
 	var realDir string
 
 	for {
 		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			// We found the deepest existing directory.
-			// It must resolve successfully and be absolute.
 			realDir, err = filepath.Abs(resolved)
 			if err != nil {
 				return "", err
 			}
 			break
 		} else if !os.IsNotExist(err) {
-			// If the error is NOT "file not found" (e.g., permission denied), fail safely.
 			return "", fmt.Errorf("could not resolve path %q: %w", dir, err)
 		}
 
-		// This directory doesn't exist. Move up one level.
-		base := filepath.Base(dir)
-		if base == string(filepath.Separator) || base == "." || base == ".." {
+		parent := filepath.Base(dir)
+		if parent == string(filepath.Separator) || parent == "." || parent == ".." {
 			return "", fmt.Errorf("could not find any existing parent for %q", target)
 		}
-		missingComponents = append([]string{base}, missingComponents...)
+		missingComponents = append([]string{parent}, missingComponents...)
 		dir = filepath.Dir(dir)
 	}
 
-	// 4. Reconstruct the target using the resolved parent and the missing components.
-	realTarget := filepath.Join(realDir, filepath.Join(missingComponents...))
-
-	// Final check
+	// Reconstruct: realDir + missing dirs + base filename
+	parts := append(missingComponents, base)
+	realTarget := filepath.Join(realDir, filepath.Join(parts...))
 	return checkRel(realRoot, realTarget)
 }
 
-// checkRel ensures realTarget is strictly inside realRoot.
 func checkRel(realRoot, realTarget string) (string, error) {
-	// Use filepath.Rel to compute the relative path.
-	// If they are on different drives (Windows), this returns an error.
 	rel, err := filepath.Rel(realRoot, realTarget)
 	if err != nil {
 		return "", fmt.Errorf("path %q is on a different volume or invalid: %w", realTarget, err)
 	}
-
-	// If the relative path starts with "..", it's outside the root.
 	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
 		return "", fmt.Errorf("path %q is outside the repository", realTarget)
 	}
+	return realTarget, nil // Return the resolved absolute path, not the relative one
+}
 
-	// Normalize path separators for the return value (always use forward slashes for consistency)
-	return filepath.ToSlash(rel), nil
+// secureReadFile opens a file with O_NOFOLLOW to prevent TOCTOU symlink attacks.
+// It returns the file contents. If the file does not exist, it returns an empty slice.
+func secureReadFile(path string) ([]byte, error) {
+	// O_NOFOLLOW ensures the *final* component is not a symlink.
+	// We rely on safeRelPath to have resolved parent directories safely.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []byte{}, nil // New file
+		}
+		// If it's a symlink, ELOOP is returned.
+		if err == syscall.ELOOP {
+			return nil, fmt.Errorf("refusing to follow symlink at %s", path)
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	return io.ReadAll(f)
 }
 
 func snapshotPath(snapDir, relPath string) string {

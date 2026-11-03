@@ -129,7 +129,7 @@ func NewHookAgentCmd() *cobra.Command {
 			}
 			prompt = sanitizePrompt(cfg, prompt)
 
-			rel, err := safeRelPath(root, filePath)
+			realPath, err := safeRelPath(root, filePath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "auteur: refusing to process file outside repo: %v\n", err)
 				return nil
@@ -138,6 +138,7 @@ func NewHookAgentCmd() *cobra.Command {
 			// The snapshot directory holds the "before" state of files the AI has touched
 			snapDir := filepath.Join(root, ".git", "auteur", "snapshots")
 			os.MkdirAll(snapDir, 0o755)
+			rel, _ := filepath.Rel(root, realPath)
 			snapPath := snapshotPath(snapDir, rel)
 
 			var beforeContent []byte
@@ -153,7 +154,7 @@ func NewHookAgentCmd() *cobra.Command {
 				return nil
 			}
 
-			afterContent, err := os.ReadFile(filePath)
+			afterContent, err := secureReadFile(realPath)
 			if err != nil {
 				// File might have been deleted
 				return nil
