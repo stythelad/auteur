@@ -1,6 +1,13 @@
 # Changelog
 
+## v0.5.3 — 2026-11-03
+
+### Security
+- **Airtight symlink path traversal fix:** Resolves the deepest existing parent directory and validates it against the canonical repository root. Rejects targets that resolve outside the repo via file or directory symlinks, even for non-existent files.
+- **Path traversal regression tests:** Added integration tests for file symlinks, directory symlinks, nested non-existent files, valid internal symlinks, and ordinary files.
+
 ## v0.5.2 — 2026-11-03
+
 
 ### Security
 - **Symlink path traversal fix:** Validates that files resolved via symlinks cannot escape the repository boundary during snapshotting.
