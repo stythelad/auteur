@@ -142,10 +142,19 @@ This cryptographically signs the commit's provenance record using your local
 SSH key (default: `~/.ssh/id_ed25519`). The ledger stores your identity, your
 public key, and the cryptographic signature. 
 
-Because the signature is tied to your SSH key, you cannot forge someone else's
-identity. When CI runs `auteur check`, it verifies the hash chain **and** every
-cryptographic signature, ensuring that a human actually approved that specific
-code. The signoff is saved directly to the local `.git/auteur/provenance.jsonl` file.
+Auteur verifies that the signature matches the key used to create it. However, to
+prevent someone from generating a throwaway SSH key and claiming to be a
+maintainer, you **must** configure a list of trusted signers in your config.
+
+Add the allowed identities and their public SSH keys to `.git/auteur/config.yaml`:
+
+    trusted_signers:
+      "Alice": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+      "Bob": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+
+When `auteur check` or `auteur verify` runs, it will reject any signature
+where the public key does not match the trusted key for that identity in the
+config. The signoff is saved directly to the local `.git/auteur/provenance.jsonl` file.
 
 ### Tamper-evident ledger
 
