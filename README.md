@@ -61,10 +61,13 @@ That creates .auteur/config.yaml, .auteur/policy.yaml, an empty
 **Automatic (Claude Code):**
 If you use Claude Code, you don't need to wrap it. `auteur init` automatically installs a `.claude/settings.json` hook. When Claude edits a file, the hook quietly records it. When you commit, Auteur attributes those files to Claude at `high` confidence.
 
-**Manual (Any Agent):**
-For Cursor, Copilot, Codex, or any other tool, wrap the invocation:
+**Automatic (Cursor):**
+Cursor is also supported out of the box. `auteur init` installs a `.cursor/hooks.json` file. Any file edited by Cursor's Agent or Composer is automatically attributed when you commit.
 
-    auteur wrap --agent claude-code --model claude-opus-5.5 -- claude "fix the login bug"
+**Manual (Copilot, Codex, Any Other Agent):**
+For tools that don't have local lifecycle hooks, wrap the invocation. This captures the exact line ranges changed during the session:
+
+    auteur wrap --agent copilot -- copilot-cli "fix the login bug"
     git add .
     git commit -m "fix login bug"
     auteur blame auth/login.py:42
