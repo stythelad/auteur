@@ -3,13 +3,10 @@ package commands
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // safeRelPath resolves the target path and ensures it is strictly inside the repository root.
@@ -66,41 +63,6 @@ func checkRel(realRoot, realTarget string) (string, error) {
 		return "", fmt.Errorf("path %q is outside the repository", realTarget)
 	}
 	return realTarget, nil
-}
-
-// secureReadFile opens a file with O_NOFOLLOW to prevent TOCTOU symlink attacks.
-// It also re-validates the parent directory immediately before opening to prevent
-// parent-directory replacement attacks.
-func secureReadFile(root, path string) ([]byte, error) {
-	// Re-validate the path immediately before reading.
-	// This drastically narrows the window for a TOCTOU attack.
-	revalidatedPath, err := safeRelPath(root, path)
-	if err != nil {
-		return nil, fmt.Errorf("revalidation failed: %w", err)
-	}
-	if revalidatedPath != path {
-		return nil, fmt.Errorf("path changed during validation: expected %s, got %s", path, revalidatedPath)
-	}
-
-	// O_NOFOLLOW ensures the *final* component is not a symlink.
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
-	if err != nil {
-		if os.IsNotExist(err) {
-			if info, lerr := os.Lstat(path); lerr == nil {
-				if info.Mode()&os.ModeSymlink != 0 {
-					return nil, fmt.Errorf("refusing to read dangling symlink at %s", path)
-				}
-			}
-			return []byte{}, nil
-		}
-		if errors.Is(err, syscall.ELOOP) {
-			return nil, fmt.Errorf("refusing to follow symlink at %s", path)
-		}
-		return nil, err
-	}
-	defer f.Close()
-
-	return io.ReadAll(f)
 }
 
 func snapshotPath(snapDir, relPath string) string {
