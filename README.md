@@ -108,6 +108,27 @@ Path matching supports *, ?, and ** (multi-segment).
 `auteur check --since <ref>` only checks commits not reachable from `<ref>`,
 which is what you want in CI.
 
+## Approving agent code
+
+By default, `auteur check` fails closed. If an agent touches a protected path
+(e.g. `auth/`), the build fails until a human signs off on that specific commit.
+
+To approve a commit, use the CLI:
+
+    auteur sign <commit-sha> --user "alice"
+
+This updates the `human_signoff` array for that specific record in the ledger.
+You then commit the updated `.auteur/provenance.jsonl` file to your branch.
+The `post-commit` hook does not do this automatically.
+
+### Tamper-evident ledger
+
+To prevent developers from bypassing the policy by just hand-editing the JSONL
+file to add their own name, the ledger is **tamper-evident**. Every record
+includes a SHA-256 hash of the previous record. If the file is modified outside
+of `auteur`, the hash chain breaks, and `auteur check` will fail instantly with
+a `ledger tampering detected` error.
+
 ## CI integration
 
 GitHub Actions:
@@ -213,24 +234,3 @@ MIT. See LICENSE.
 ## Contributing
 
 See CONTRIBUTING.md. Issues and PRs welcome.
-
-## Approving agent code
-
-By default, `auteur check` fails closed. If an agent touches a protected path
-(e.g. `auth/`), the build fails until a human signs off on that specific commit.
-
-To approve a commit, use the CLI:
-
-    auteur sign <commit-sha> --user "alice"
-
-This updates the `human_signoff` array for that specific record in the ledger.
-You then commit the updated `.auteur/provenance.jsonl` file to your branch.
-The `post-commit` hook does not do this automatically.
-
-### Tamper-evident ledger
-
-To prevent developers from bypassing the policy by just hand-editing the JSONL
-file to add their own name, the ledger is **tamper-evident**. Every record
-includes a SHA-256 hash of the previous record. If the file is modified outside
-of `auteur`, the hash chain breaks, and `auteur check` will fail instantly with
-a `ledger tampering detected` error.
