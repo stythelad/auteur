@@ -1,6 +1,18 @@
 # Changelog
 
+## v0.5.4 — 2026-11-03
+
+### Security
+- **Descriptor-relative traversal:** On Linux and macOS, snapshots are now read using `openat` with `O_NOFOLLOW` on every path component. This closes the time-of-check-to-time-of-use (TOCTOU) race where a parent directory could be swapped for a symlink between validation and read.
+- **Parent-directory symlink defense:** Directory components are verified to be real directories at the moment of access, not just at validation time.
+- **Dangling symlink rejection:** Files that are dangling symlinks are explicitly rejected rather than being treated as new files.
+- **Strengthened race tests:** Added integration tests that repeatedly swap a directory with a symlink, verify no outside content is captured, and confirm rejected reads don't create provenance records.
+
+### Added
+- **macOS CI:** GitHub Actions now runs the full test suite and `go vet` on both Ubuntu and macOS. Release binaries are built for linux/darwin on both amd64 and arm64.
+
 ## v0.5.3 — 2026-11-03
+
 
 ### Security
 - **Airtight symlink path traversal fix:** Resolves the deepest existing parent directory and validates it against the canonical repository root. Rejects targets that resolve outside the repo via file or directory symlinks, even for non-existent files.
