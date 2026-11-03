@@ -2,6 +2,7 @@ package test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -340,5 +341,39 @@ func TestCIRejectsPRTrustRootModification(t *testing.T) {
 	}
 	if !strings.Contains(out, "PR modifies the trust root") {
 		t.Fatalf("expected trust root modification error, got: %s", out)
+	}
+}
+
+func TestPromptRedaction(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+
+	// Enable prompt capture for this test
+	cfgPath := filepath.Join(r.dir, ".git", "auteur", "config.yaml")
+	cfgData, _ := os.ReadFile(cfgPath)
+	os.WriteFile(cfgPath, []byte(strings.Replace(string(cfgData), "capture_prompt: false", "capture_prompt: true", 1)), 0o644)
+
+	r.write("auth/login.py", "base\n")
+	r.commitAll("base")
+
+	// Simulate an AI edit with a secret in the prompt
+	payload := `{"prompt": "use AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "tool_input": {"file_path": "` + filepath.Join(r.dir, "auth", "login.py") + `"}}`
+	cmd := exec.Command(binaryPath, "hook-agent", "claude-code")
+	cmd.Dir = r.dir
+	cmd.Env = r.env
+	cmd.Stdin = strings.NewReader(payload)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook-agent: %v\n%s", err, out)
+	}
+
+	r.appendTo("auth/login.py", "evil\n")
+	r.commitAll("ai edit")
+
+	ledger, _ := os.ReadFile(filepath.Join(r.dir, ".git", "auteur", "provenance.jsonl"))
+	if strings.Contains(string(ledger), "wJalrXUtnFEMI") {
+		t.Fatalf("secret was not redacted in ledger: %s", ledger)
+	}
+	if !strings.Contains(string(ledger), "[REDACTED]") {
+		t.Fatalf("expected [REDACTED] in ledger: %s", ledger)
 	}
 }

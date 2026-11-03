@@ -35,7 +35,7 @@ func Default() Config {
 	return Config{
 		Version: 1,
 		Privacy: Privacy{
-			CapturePrompt:    true,
+			CapturePrompt:    false, // Opt-in by default
 			PromptMaxLength:  200,
 			RedactSecrets:    true,
 			CaptureSessionID: true,

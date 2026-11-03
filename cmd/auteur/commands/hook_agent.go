@@ -18,7 +18,18 @@ import (
 	"github.com/stythelad/auteur/internal/git"
 )
 
-var secretRegex = regexp.MustCompile(`(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16})`)
+var secretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`sk-[a-zA-Z0-9]{20,}`),
+	regexp.MustCompile(`ghp_[a-zA-Z0-9]{20,}`),
+	regexp.MustCompile(`gho_[a-zA-Z0-9]{20,}`),
+	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
+	regexp.MustCompile(`AWS_SECRET_ACCESS_KEY\s*=\s*[^\s]+`),
+	regexp.MustCompile(`xox[baprs]-[0-9a-zA-Z]{10,}`),
+	regexp.MustCompile(`eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+`),
+	regexp.MustCompile(`-----BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+ PRIVATE KEY-----`),
+	regexp.MustCompile(`[a-zA-Z]+://[^:\s]+:[^@\s]+@[^\s]+`),
+	regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key)\s*[:=]\s*["']?[^\s"']{8,}`),
+}
 
 func sanitizePrompt(cfg config.Config, prompt string) string {
 	if prompt == "" {
@@ -29,7 +40,9 @@ func sanitizePrompt(cfg config.Config, prompt string) string {
 		return "sha256:" + hex.EncodeToString(h[:])
 	}
 	if cfg.Privacy.RedactSecrets {
-		prompt = secretRegex.ReplaceAllString(prompt, "[REDACTED]")
+		for _, re := range secretPatterns {
+			prompt = re.ReplaceAllString(prompt, "[REDACTED]")
+		}
 	}
 	if cfg.Privacy.PromptMaxLength > 0 && len(prompt) > cfg.Privacy.PromptMaxLength {
 		prompt = prompt[:cfg.Privacy.PromptMaxLength] + "..."
