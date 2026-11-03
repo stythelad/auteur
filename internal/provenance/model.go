@@ -62,4 +62,6 @@ type Record struct {
 	Confidence Confidence  `json:"confidence"`
 	Lines      []LineRange `json:"lines"`
 	Review     Review      `json:"review,omitempty"`
+	PrevHash   string      `json:"prev_hash,omitempty"`
+	Hash       string      `json:"hash,omitempty"`
 }

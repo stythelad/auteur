@@ -56,6 +56,12 @@ func NewCheckCmd() *cobra.Command {
 				return errors.New("provenance ledger not found; run `auteur init` and `auteur scan-history`, or pass --allow-missing-ledger")
 			}
 
+			if !allowMissingLedger {
+				if err := provenance.VerifyLedger(recs); err != nil {
+					return fmt.Errorf("security check failed: %w", err)
+				}
+			}
+
 			pol, err := policy.Load(root)
 			if err != nil {
 				return err

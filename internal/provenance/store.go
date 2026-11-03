@@ -60,6 +60,13 @@ func (s *Store) Append(r Record) error {
 	}
 	defer f.Close()
 
+	// Find the last record to get the prev hash
+	recs, _ := s.Load()
+	if len(recs) > 0 {
+		r.PrevHash = recs[len(recs)-1].Hash
+	}
+	r.Hash = computeHash(r)
+
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(r); err != nil {
@@ -134,10 +141,14 @@ func (s *Store) Rewrite(recs []Record) error {
 
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)
-	for _, r := range recs {
-		if err := enc.Encode(r); err != nil {
+	var prevHash string
+	for i := range recs {
+		recs[i].PrevHash = prevHash
+		recs[i].Hash = computeHash(recs[i])
+		if err := enc.Encode(recs[i]); err != nil {
 			return fmt.Errorf("encode record: %w", err)
 		}
+		prevHash = recs[i].Hash
 	}
 	return nil
 }
