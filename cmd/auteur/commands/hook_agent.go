@@ -30,23 +30,36 @@ func NewHookAgentCmd() *cobra.Command {
 				return err
 			}
 
-			var filePath string
+			var filePath, sessionID, prompt string
+
+			// Try Claude JSON
 			var claudePayload struct {
+				SessionID string `json:"session_id"`
+				Prompt    string `json:"prompt"`
 				ToolInput struct {
 					FilePath string `json:"file_path"`
 				} `json:"tool_input"`
 			}
 			if json.Unmarshal(input, &claudePayload) == nil && claudePayload.ToolInput.FilePath != "" {
 				filePath = claudePayload.ToolInput.FilePath
+				sessionID = claudePayload.SessionID
+				prompt = claudePayload.Prompt
 			}
+
+			// Try Cursor JSON
 			if filePath == "" {
 				var cursorPayload struct {
-					FilePath string `json:"filePath"`
+					FilePath  string `json:"filePath"`
+					SessionID string `json:"sessionId"`
+					Prompt    string `json:"prompt"`
 				}
 				if json.Unmarshal(input, &cursorPayload) == nil && cursorPayload.FilePath != "" {
 					filePath = cursorPayload.FilePath
+					sessionID = cursorPayload.SessionID
+					prompt = cursorPayload.Prompt
 				}
 			}
+
 			if filePath == "" {
 				raw := strings.TrimSpace(string(input))
 				if !strings.HasPrefix(raw, "{") && raw != "" {
@@ -63,25 +76,22 @@ func NewHookAgentCmd() *cobra.Command {
 				return nil
 			}
 
-			// Try to diff the file to get specific line ranges.
-			// If the file is untracked, diff shows the whole file.
 			diff, _ := git.Run(root, "diff", "-U0", "HEAD", "--", rel)
 			if diff == "" {
-				// Maybe it's untracked?
 				diff, _ = git.Run(root, "diff", "-U0", "--no-index", "/dev/null", rel)
 			}
-
 			ranges := git.AddedLines(diff)
 			if len(ranges) == 0 {
-				// Fallback if diff is empty (e.g. hook fired but nothing changed)
 				ranges = [][2]int{{1, 999999}}
 			}
 
+			// Save to dirty file including metadata
 			dirtyList := filepath.Join(root, ".git", "auteur", agentName+"-dirty-files.txt")
 			f, err := os.OpenFile(dirtyList, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 			if err == nil {
 				for _, r := range ranges {
-					fmt.Fprintf(f, "%s:%d:%d\n", rel, r[0], r[1])
+					// Format: file:start:end:session:prompt
+					fmt.Fprintf(f, "%s:%d:%d:%s:%s\n", rel, r[0], r[1], sessionID, prompt)
 				}
 				f.Close()
 			}

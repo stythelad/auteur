@@ -41,31 +41,79 @@ records to the ledger.`,
 			agentFiles := []string{"claude-code", "cursor"}
 			for _, agent := range agentFiles {
 				dirtyList := filepath.Join(root, ".git", "auteur", agent+"-dirty-files.txt")
+				var agentMeta *provenance.Agent
 				if dirtyBytes, err := os.ReadFile(dirtyList); err == nil {
 					var lines []provenance.LineRange
 					for _, line := range splitLines(string(dirtyBytes)) {
-						// Format: file:start:end
-						parts := strings.Split(line, ":")
-						if len(parts) == 3 {
+						// Format: file:start:end:session:prompt
+						parts := strings.SplitN(line, ":", 5)
+						if len(parts) >= 3 {
 							file := parts[0]
 							start, _ := strconv.Atoi(parts[1])
 							end, _ := strconv.Atoi(parts[2])
 							if files[file] {
+								sessionID := ""
+								prompt := ""
+								if len(parts) >= 4 {
+									sessionID = parts[3]
+								}
+								if len(parts) >= 5 {
+									prompt = parts[4]
+								}
+
+								// Save metadata to the record
 								lines = append(lines, provenance.LineRange{File: file, Start: start, End: end, Origin: provenance.OriginAgent})
+								if sessionID != "" || prompt != "" {
+									if agentMeta == nil {
+										agentMeta = &provenance.Agent{Name: agent}
+									}
+									agentMeta.SessionID = sessionID
+									// For prompt, we ideally hash it, but we'll store a snippet for now.
+									if prompt != "" {
+										agentMeta.PromptHash = prompt
+									}
+								}
 							}
 						}
 					}
 					if len(lines) > 0 {
+						if agentMeta == nil {
+							agentMeta = &provenance.Agent{Name: agent}
+						}
 						rec := provenance.Record{
 							Commit:     head,
 							Timestamp:  time.Now().UTC(),
 							Confidence: provenance.ConfidenceHigh,
-							Agent:      &provenance.Agent{Name: agent},
+							Agent:      agentMeta,
 							Lines:      lines,
 						}
 						provenance.Open(root).Append(rec)
 					}
 					os.Remove(dirtyList) // Clear after processing
+				}
+			}
+
+			// Detect cherry-picks to preserve attribution
+			msg, _ := git.CommitMessage(root, head)
+			if strings.Contains(msg, "(cherry picked from commit ") {
+				start := strings.Index(msg, "(cherry picked from commit ") + 26
+				end := strings.Index(msg[start:], ")")
+				if end != -1 {
+					origSHA := msg[start : start+end]
+					// Copy records from origSHA to head
+					store := provenance.Open(root)
+					recs, _ := store.Load()
+					for _, r := range recs {
+						if r.Commit == origSHA {
+							c := r
+							c.Commit = head
+							c.Timestamp = time.Now().UTC()
+							store.Append(c)
+						}
+					}
+					if verbose {
+						fmt.Fprintf(cmd.OutOrStdout(), "preserved cherry-pick attribution from %s\n", origSHA[:7])
+					}
 				}
 			}
 
