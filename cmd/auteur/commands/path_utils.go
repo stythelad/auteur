@@ -3,6 +3,7 @@ package commands
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -79,10 +80,17 @@ func secureReadFile(path string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []byte{}, nil // New file
+			// Distinguish between a normal missing file and a dangling symlink.
+			// If Lstat succeeds, the path exists as a symlink (or file), but the target is missing.
+			if info, lerr := os.Lstat(path); lerr == nil {
+				if info.Mode()&os.ModeSymlink != 0 {
+					return nil, fmt.Errorf("refusing to read dangling symlink at %s", path)
+				}
+			}
+			return []byte{}, nil // Ordinary new file
 		}
-		// If it's a symlink, ELOOP is returned.
-		if err == syscall.ELOOP {
+		// If it's a symlink, ELOOP is returned (even if the target is dangling).
+		if errors.Is(err, syscall.ELOOP) {
 			return nil, fmt.Errorf("refusing to follow symlink at %s", path)
 		}
 		return nil, err
