@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -58,20 +59,20 @@ func NewHookAgentPreCmd() *cobra.Command {
 				return nil
 			}
 
-			rel, err := filepath.Rel(root, filePath)
+			rel, err := safeRelPath(root, filePath)
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "auteur: refusing to snapshot outside repo: %v\n", err)
 				return nil
 			}
 
 			content, err := os.ReadFile(filePath)
 			if err != nil {
-				// File doesn't exist yet (new file). Save empty snapshot.
 				content = []byte{}
 			}
 
 			snapDir := filepath.Join(root, ".git", "auteur", "snapshots")
 			os.MkdirAll(snapDir, 0o755)
-			snapPath := filepath.Join(snapDir, strings.ReplaceAll(rel, "/", "_"))
+			snapPath := snapshotPath(snapDir, rel)
 			os.WriteFile(snapPath, content, 0o644)
 			_ = agentName
 
