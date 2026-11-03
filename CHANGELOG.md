@@ -1,6 +1,13 @@
 # Changelog
 
+## v0.5.2 — 2026-11-03
+
+### Security
+- **Symlink path traversal fix:** Validates that files resolved via symlinks cannot escape the repository boundary during snapshotting.
+- **Action version bump:** Updated the composite GitHub Action and workflow examples to `v0.5.1`.
+
 ## v0.5.1 — 2026-11-03
+
 
 ### Security & Fixes
 - **Path traversal hardening:** Validated that file paths resolved during IDE hook snapshots remain strictly inside the repository.
