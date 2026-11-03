@@ -115,9 +115,12 @@ By default, `auteur check` fails closed. If an agent touches a protected path
 
 To approve a commit, use the CLI:
 
-    auteur sign <commit-sha> --user "alice"
+    auteur sign <commit-sha>
 
-This updates the `human_signoff` array for that specific record in the ledger.
+This creates a new (empty) Git commit containing an `Auteur-Signoff` trailer.
+Auteur extracts the author identity from that commit and writes it into the
+`human_signoff` array for the target commit's record in the ledger. Because the
+signoff is tied to a real Git commit, you cannot forge someone else's identity.
 You then commit the updated `.auteur/provenance.jsonl` file to your branch.
 The `post-commit` hook does not do this automatically.
 
