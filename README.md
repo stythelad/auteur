@@ -193,6 +193,37 @@ We provide a composite GitHub Action that handles installation and execution.
 
 `fetch-depth: 0` is required so Auteur can see the base branch history.
 
+## Cryptographic auditing
+
+Because Auteur makes security claims, you can explicitly audit the ledger:
+
+    auteur verify
+
+This runs a deep audit and outputs the trust guarantees:
+
+    === Auteur Ledger Audit ===
+    Total records: 1
+
+    [1] Integrity (SHA-256 Hash Chain)
+      Status: PASSED
+      The ledger has not been tampered with.
+
+    [2] Authenticity (SSH Signatures)
+      Status: PASSED
+      All cryptographic signatures are valid.
+
+    [3] Signoff Roster
+      61d85ee: Alice
+
+    === Trust Model ===
+    - The hash chain proves this ledger has not been accidentally corrupted or hand-edited.
+    - The SSH signatures prove which local keys authorised which exact code changes.
+    - Note: This tool assumes the signing keys are not compromised. It does not replace CODEOWNERS or human review.
+
+If someone manually edits the JSONL file to change a signer's identity or line
+ranges, `auteur verify` will instantly fail with a `hash mismatch` and an
+`invalid signature` error.
+
 ## Command reference
 
 | Command | Purpose |
