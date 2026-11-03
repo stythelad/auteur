@@ -4,45 +4,83 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
 
-// safeRelPath returns a relative path if it is strictly inside the root,
-// resolving symlinks to prevent traversal attacks.
+// safeRelPath resolves the target path and ensures it is strictly inside the repository root.
+// It handles symlinks, non-existent files, and non-existent parent directories safely.
 func safeRelPath(root, target string) (string, error) {
-	// 1. Resolve the root to its canonical path
+	// 1. Resolve the repo root to its canonical path.
 	realRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return "", fmt.Errorf("resolve repo root: %w", err)
+		return "", fmt.Errorf("could not resolve repo root: %w", err)
 	}
 
-	// 2. Resolve the target's parent directory
-	dir := filepath.Dir(target)
-	base := filepath.Base(target)
-
-	realDir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		// If the directory doesn't exist, it's a new file in a non-existent dir.
-		// We check if the lexical path is safe. If a user tries to create
-		// files in non-existent directories outside the repo, lexical check catches it.
-		realDir = dir
-	}
-
-	realTarget := filepath.Join(realDir, base)
-
-	// 3. Compute relative path from realRoot to realTarget
-	rel, err := filepath.Rel(realRoot, realTarget)
+	// Ensure the root itself is absolute
+	realRoot, err = filepath.Abs(realRoot)
 	if err != nil {
 		return "", err
 	}
 
-	// 4. Check if it escaped the root
-	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("path %q is outside the repository", target)
+	// 2. If the target itself exists (or is a symlink), resolve it fully.
+	if realTarget, err := filepath.EvalSymlinks(target); err == nil {
+		realTarget, _ = filepath.Abs(realTarget)
+		return checkRel(realRoot, realTarget)
 	}
 
-	return rel, nil
+	// 3. The target doesn't exist. Find the deepest existing parent.
+	dir := filepath.Dir(target)
+	var missingComponents []string
+	var realDir string
+
+	for {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			// We found the deepest existing directory.
+			// It must resolve successfully and be absolute.
+			realDir, err = filepath.Abs(resolved)
+			if err != nil {
+				return "", err
+			}
+			break
+		} else if !os.IsNotExist(err) {
+			// If the error is NOT "file not found" (e.g., permission denied), fail safely.
+			return "", fmt.Errorf("could not resolve path %q: %w", dir, err)
+		}
+
+		// This directory doesn't exist. Move up one level.
+		base := filepath.Base(dir)
+		if base == string(filepath.Separator) || base == "." || base == ".." {
+			return "", fmt.Errorf("could not find any existing parent for %q", target)
+		}
+		missingComponents = append([]string{base}, missingComponents...)
+		dir = filepath.Dir(dir)
+	}
+
+	// 4. Reconstruct the target using the resolved parent and the missing components.
+	realTarget := filepath.Join(realDir, filepath.Join(missingComponents...))
+
+	// Final check
+	return checkRel(realRoot, realTarget)
+}
+
+// checkRel ensures realTarget is strictly inside realRoot.
+func checkRel(realRoot, realTarget string) (string, error) {
+	// Use filepath.Rel to compute the relative path.
+	// If they are on different drives (Windows), this returns an error.
+	rel, err := filepath.Rel(realRoot, realTarget)
+	if err != nil {
+		return "", fmt.Errorf("path %q is on a different volume or invalid: %w", realTarget, err)
+	}
+
+	// If the relative path starts with "..", it's outside the root.
+	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("path %q is outside the repository", realTarget)
+	}
+
+	// Normalize path separators for the return value (always use forward slashes for consistency)
+	return filepath.ToSlash(rel), nil
 }
 
 func snapshotPath(snapDir, relPath string) string {
