@@ -213,10 +213,10 @@ We provide a composite GitHub Action that handles installation and execution.
           - uses: actions/checkout@v4
             with:
               fetch-depth: 0
-          - uses: stythelad/auteur@v0.5.1
+          - uses: stythelad/auteur@v0.5.3
             with:
               base-ref: ${{ github.base_ref }}
-              auteur-version: 'v0.5.1' # Optional: defaults to the release tag
+              auteur-version: 'v0.5.3' # Optional: defaults to the release tag
 
 `fetch-depth: 0` is required so Auteur can see the base branch history.
 

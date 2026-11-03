@@ -15,4 +15,4 @@ jobs:
         uses: ./.github/actions/auteur
         with:
           base-ref: ${{ github.base_ref }}
-          auteur-version: 'v0.5.1'
+          auteur-version: 'v0.5.3'
