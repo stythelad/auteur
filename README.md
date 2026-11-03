@@ -147,9 +147,9 @@ a `ledger tampering detected` error.
 
 ## CI integration
 
-GitHub Actions:
+We provide a composite GitHub Action that handles installation and execution.
 
-    name: auteur
+    name: Auteur
     on: [pull_request]
     jobs:
       check:
@@ -158,13 +158,11 @@ GitHub Actions:
           - uses: actions/checkout@v4
             with:
               fetch-depth: 0
-          - uses: actions/setup-go@v5
+          - uses: stythelad/auteur@main
             with:
-              go-version: '1.22'
-          - run: go install github.com/stythelad/auteur/cmd/auteur@latest
-          - run: auteur check --since origin/${{ github.base_ref }}
+              base-ref: ${{ github.base_ref }}
 
-fetch-depth: 0 is required so Auteur can see the base branch history.
+`fetch-depth: 0` is required so Auteur can see the base branch history.
 
 ## Command reference
 
