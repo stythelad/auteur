@@ -73,53 +73,20 @@ func NewInitCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-commit (%s)\n", hookStatus(pcInstalled))
 			fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-rewrite (%s)\n", hookStatus(prInstalled))
 
-			// Write Claude Code settings
-			claudeDir := filepath.Join(root, ".claude")
-			if err := os.MkdirAll(claudeDir, 0o755); err == nil {
-				claudeSettings := `{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "auteur hook-agent-pre claude-code"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "auteur hook-agent claude-code"
-          }
-        ]
-      }
-    ]
-  }
-}`
-				os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(claudeSettings), 0o644)
-				fmt.Fprintf(cmd.OutOrStdout(), "  claude: .claude/settings.json (installed)\n")
+			// Merge Claude Code settings
+			claudePath := filepath.Join(root, ".claude", "settings.json")
+			if err := mergeClaudeSettings(claudePath); err != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "  claude: ERROR: %v\n", err)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "  claude: .claude/settings.json (merged)\n")
 			}
 
-			// Write Cursor settings
-			cursorDir := filepath.Join(root, ".cursor")
-			if err := os.MkdirAll(cursorDir, 0o755); err == nil {
-				cursorSettings := `{
-  "hooks": {
-    "afterFileEdit": [
-      {
-        "command": "auteur hook-agent cursor"
-      }
-    ]
-  }
-}`
-				os.WriteFile(filepath.Join(cursorDir, "hooks.json"), []byte(cursorSettings), 0o644)
-				fmt.Fprintf(cmd.OutOrStdout(), "  cursor: .cursor/hooks.json (installed)\n")
+			// Merge Cursor settings
+			cursorPath := filepath.Join(root, ".cursor", "hooks.json")
+			if err := mergeCursorHooks(cursorPath); err != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "  cursor: ERROR: %v\n", err)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "  cursor: .cursor/hooks.json (merged)\n")
 			}
 
 			return nil
