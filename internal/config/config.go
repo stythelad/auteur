@@ -19,9 +19,10 @@ type Privacy struct {
 }
 
 type Config struct {
-	Version    int               `yaml:"version"`
-	AgentNames map[string]string `yaml:"agent_names,omitempty"`
-	Privacy    Privacy           `yaml:"privacy"`
+	Version        int               `yaml:"version"`
+	AgentNames     map[string]string `yaml:"agent_names,omitempty"`
+	Privacy        Privacy           `yaml:"privacy"`
+	TrustedSigners map[string]string `yaml:"trusted_signers,omitempty"` // identity -> public key
 }
 
 func Default() Config {
@@ -38,6 +39,7 @@ func Default() Config {
 			"codex":  "codex",
 			"cursor": "cursor",
 		},
+		TrustedSigners: map[string]string{},
 	}
 }
 

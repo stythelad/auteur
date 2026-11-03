@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stythelad/auteur/internal/config"
 	"github.com/stythelad/auteur/internal/git"
 	"github.com/stythelad/auteur/internal/provenance"
 )
@@ -31,7 +32,8 @@ func NewVerifyCmd() *cobra.Command {
 			}
 
 			integrityErr := provenance.VerifyLedger(recs)
-			authErr := provenance.VerifySignoffs(recs)
+			cfg, _ := config.Load(root)
+			authErr := provenance.VerifySignoffs(recs, cfg.TrustedSigners)
 
 			fmt.Fprintf(cmd.OutOrStdout(), "=== Auteur Ledger Audit ===\n")
 			fmt.Fprintf(cmd.OutOrStdout(), "Total records: %d\n\n", len(recs))

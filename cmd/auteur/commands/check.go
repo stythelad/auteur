@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stythelad/auteur/internal/config"
 	"github.com/stythelad/auteur/internal/git"
 	"github.com/stythelad/auteur/internal/policy"
 	"github.com/stythelad/auteur/internal/provenance"
@@ -60,7 +61,8 @@ func NewCheckCmd() *cobra.Command {
 				if err := provenance.VerifyLedger(recs); err != nil {
 					return fmt.Errorf("security check failed: %w", err)
 				}
-				if err := provenance.VerifySignoffs(recs); err != nil {
+				cfg, _ := config.Load(root)
+				if err := provenance.VerifySignoffs(recs, cfg.TrustedSigners); err != nil {
 					return fmt.Errorf("cryptographic verification failed: %w", err)
 				}
 			}

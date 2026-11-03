@@ -15,14 +15,12 @@ import (
 
 func computeHash(r Record) string {
 	r.Hash = ""
-	// Deep copy signoffs to avoid mutating the original record's slice
 	saved := make([]Signoff, len(r.Review.Signoffs))
 	for i := range r.Review.Signoffs {
 		saved[i] = r.Review.Signoffs[i]
 		saved[i].Signature = ""
 	}
 	r.Review.Signoffs = saved
-
 	b, _ := json.Marshal(r)
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
@@ -95,9 +93,6 @@ func VerifySignature(hash string, pubKey string, sig string) error {
 	tmpSig := filepath.Join(tmpDir, "data.sig")
 	allowedSigners := filepath.Join(tmpDir, "allowed")
 
-	if len(sig) < 30 || !strings.HasPrefix(sig, "-----BEGIN SSH SIGNATURE-----") {
-		return fmt.Errorf("malformed signature in ledger (length %d): %q", len(sig), sig[:min(len(sig), 50)])
-	}
 	os.WriteFile(tmpSig, []byte(sig), 0644)
 	os.WriteFile(allowedSigners, []byte("signer "+pubKey+"\n"), 0644)
 
@@ -133,7 +128,7 @@ func SignRecord(r *Record, identity string, sshKeyPath string) error {
 	return nil
 }
 
-func VerifySignoffs(recs []Record) error {
+func VerifySignoffs(recs []Record, trustedSigners map[string]string) error {
 	for _, r := range recs {
 		if len(r.Review.Signoffs) == 0 {
 			continue
@@ -150,6 +145,17 @@ func VerifySignoffs(recs []Record) error {
 		}
 
 		for _, s := range r.Review.Signoffs {
+			// Check against trusted keys if provided
+			if len(trustedSigners) > 0 {
+				trustedKey, ok := trustedSigners[s.Identity]
+				if !ok {
+					return fmt.Errorf("untrusted signer %q for commit %s (key not in config)", s.Identity, r.Commit[:7])
+				}
+				if trustedKey != s.PublicKey {
+					return fmt.Errorf("public key mismatch for %q on commit %s: the key used to sign does not match the trusted key in config", s.Identity, r.Commit[:7])
+				}
+			}
+
 			if err := VerifySignature(hashToVerify, s.PublicKey, s.Signature); err != nil {
 				return fmt.Errorf("invalid signature for commit %s by %s: %w", r.Commit[:7], s.Identity, err)
 			}
