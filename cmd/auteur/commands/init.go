@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -70,6 +71,29 @@ func NewInitCmd() *cobra.Command {
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-commit (%s)\n", hookStatus(pcInstalled))
 			fmt.Fprintf(cmd.OutOrStdout(), "  hook:   .git/hooks/post-rewrite (%s)\n", hookStatus(prInstalled))
+
+			// Write Claude Code settings
+			claudeDir := filepath.Join(root, ".claude")
+			if err := os.MkdirAll(claudeDir, 0o755); err == nil {
+				claudeSettings := `{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "auteur hook-claude"
+          }
+        ]
+      }
+    ]
+  }
+}`
+				os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(claudeSettings), 0o644)
+				fmt.Fprintf(cmd.OutOrStdout(), "  claude: .claude/settings.json (installed)\n")
+			}
+
 			return nil
 		},
 	}

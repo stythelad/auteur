@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,6 +34,28 @@ records to the ledger.`,
 				return err
 			}
 			ts, _ := git.CommitTime(root, head)
+
+			// Check for Claude hook dirty files
+			dirtyList := filepath.Join(root, ".git", "auteur", "claude-dirty-files.txt")
+			if dirtyBytes, err := os.ReadFile(dirtyList); err == nil {
+				for _, line := range splitLines(string(dirtyBytes)) {
+					if files[line] {
+						// Mark this file as definitely agent-authored by Claude
+						rec := provenance.Record{
+							Commit:     head,
+							Timestamp:  time.Now().UTC(),
+							Confidence: provenance.ConfidenceHigh,
+							Agent:      &provenance.Agent{Name: "claude-code"},
+							// We only know the whole file was touched, not the exact lines.
+							// So we mark line 1 to EOF (using a large number for End)
+							Lines: []provenance.LineRange{{File: line, Start: 1, End: 999999, Origin: provenance.OriginAgent}},
+						}
+						provenance.Open(root).Append(rec)
+					}
+				}
+				os.Remove(dirtyList) // Clear the list after processing
+			}
+
 			n, err := provenance.ResolvePending(root, head, ts, files)
 			if err != nil {
 				return err
