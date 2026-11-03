@@ -14,7 +14,8 @@ import (
 
 // secureReadFile safely opens a file by traversing each path component
 // relative to the previously opened directory descriptor, refusing symlinks
-// at every step. This completely eliminates TOCTOU races.
+// at every step. It also prevents blocking on special files (FIFOs, devices)
+// and rejects non-regular files.
 func secureReadFile(root, target string) ([]byte, error) {
 	realRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -30,7 +31,6 @@ func secureReadFile(root, target string) ([]byte, error) {
 		return nil, fmt.Errorf("target outside root")
 	}
 
-	// Open the root directory
 	rootFd, err := unix.Open(realRoot, unix.O_RDONLY|unix.O_DIRECTORY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open root: %w", err)
@@ -45,6 +45,9 @@ func secureReadFile(root, target string) ([]byte, error) {
 		flags := unix.O_RDONLY | unix.O_NOFOLLOW
 		if !isLast {
 			flags |= unix.O_DIRECTORY
+		} else {
+			// O_NONBLOCK prevents hanging on FIFOs and devices
+			flags |= unix.O_NONBLOCK
 		}
 
 		fd, err := unix.Openat(currentFd, part, flags, 0)
@@ -52,7 +55,7 @@ func secureReadFile(root, target string) ([]byte, error) {
 			unix.Close(currentFd)
 		}
 		if err != nil {
-			if os.IsNotExist(err) || err == unix.ENOENT {
+			if err == unix.ENOENT {
 				if isLast {
 					return []byte{}, nil // New file
 				}
@@ -66,8 +69,22 @@ func secureReadFile(root, target string) ([]byte, error) {
 		currentFd = fd
 	}
 
+	// Verify the final file descriptor points to a regular file
+	var stat unix.Stat_t
+	if err := unix.Fstat(currentFd, &stat); err != nil {
+		unix.Close(currentFd)
+		return nil, fmt.Errorf("fstat failed: %w", err)
+	}
+
+	mode := stat.Mode & unix.S_IFMT
+	if mode != unix.S_IFREG {
+		unix.Close(currentFd)
+		return nil, fmt.Errorf("refusing to read non-regular file (mode %o)", stat.Mode)
+	}
+
 	file := os.NewFile(uintptr(currentFd), target)
 	if file == nil {
+		unix.Close(currentFd)
 		return nil, fmt.Errorf("invalid fd")
 	}
 	defer file.Close()
