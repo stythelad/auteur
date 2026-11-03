@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHappyPath(t *testing.T) {
@@ -625,5 +626,95 @@ func TestSecureReadFileRejectsSymlinkReplacement(t *testing.T) {
 	// or at the secure read layer (O_NOFOLLOW).
 	if !strings.Contains(string(out), "refusing to follow symlink") && !strings.Contains(string(out), "outside the repository") {
 		t.Fatalf("expected symlink refusal, got: %s", out)
+	}
+}
+
+func TestHookAgentPreSpecialFiles(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+
+	snapDir := filepath.Join(r.dir, ".git", "auteur", "snapshots")
+
+	// Test 1: FIFO does not hang
+	// Create a FIFO
+	fifoPath := filepath.Join(r.dir, "evil_fifo")
+	if err := exec.Command("mkfifo", fifoPath).Run(); err != nil {
+		t.Skip("mkfifo not available on this platform")
+	}
+
+	payload := `{"tool_input": {"file_path": "` + fifoPath + `"}}`
+	cmd := exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+	cmd.Dir = r.dir
+	cmd.Env = r.env
+	cmd.Stdin = strings.NewReader(payload)
+
+	// Set a timeout to ensure it doesn't hang
+	done := make(chan bool)
+	go func() {
+		cmd.Run()
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		// Good, it didn't hang
+	case <-time.After(3 * time.Second):
+		t.Fatalf("SECURITY FAILURE: hook hung on FIFO")
+	}
+
+	// Verify no snapshot was created for the FIFO
+	if entries, err := os.ReadDir(snapDir); err == nil {
+		for _, e := range entries {
+			content, _ := os.ReadFile(filepath.Join(snapDir, e.Name()))
+			if strings.Contains(string(content), "fifo") {
+				t.Fatalf("unexpected snapshot for FIFO: %s", e.Name())
+			}
+		}
+	}
+
+	// Test 2: Directory is rejected
+	dirPath := filepath.Join(r.dir, "evil_dir")
+	os.MkdirAll(dirPath, 0o755)
+	payload = `{"tool_input": {"file_path": "` + dirPath + `"}}`
+	cmd = exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+	cmd.Dir = r.dir
+	cmd.Env = r.env
+	cmd.Stdin = strings.NewReader(payload)
+	out, _ := cmd.CombinedOutput()
+	if !strings.Contains(string(out), "refusing to read non-regular file") {
+		t.Fatalf("expected directory rejection, got: %s", out)
+	}
+
+	// Test 3: Normal file is read correctly
+	normalPath := filepath.Join(r.dir, "normal.txt")
+	r.write("normal.txt", "hello normal")
+	payload = `{"tool_input": {"file_path": "` + normalPath + `"}}`
+	cmd = exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+	cmd.Dir = r.dir
+	cmd.Env = r.env
+	cmd.Stdin = strings.NewReader(payload)
+	out, _ = cmd.CombinedOutput()
+	if strings.Contains(string(out), "refusing") || strings.Contains(string(out), "error") {
+		t.Fatalf("expected success for normal file, got: %s", out)
+	}
+	entries, _ := os.ReadDir(snapDir)
+	if len(entries) == 0 {
+		t.Fatalf("expected snapshot for normal file, found none")
+	}
+
+	// Test 4: Symlinks remain rejected
+	outsideFile := filepath.Join(t.TempDir(), "secret.txt")
+	os.WriteFile(outsideFile, []byte("secret"), 0o644)
+	linkPath := filepath.Join(r.dir, "evil_link")
+	os.Symlink(outsideFile, linkPath)
+
+	payload = `{"tool_input": {"file_path": "` + linkPath + `"}}`
+	cmd = exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+	cmd.Dir = r.dir
+	cmd.Env = r.env
+	cmd.Stdin = strings.NewReader(payload)
+	out, _ = cmd.CombinedOutput()
+	if !strings.Contains(string(out), "outside the repository") && !strings.Contains(string(out), "refusing to follow symlink") {
+		t.Fatalf("expected symlink rejection, got: %s", out)
 	}
 }
