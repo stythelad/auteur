@@ -24,19 +24,34 @@ func sanitizePrompt(cfg config.Config, prompt string) string {
 		return ""
 	}
 	if !cfg.Privacy.CapturePrompt {
-		// Just return a hash of the prompt instead of the raw text
 		h := sha256.Sum256([]byte(prompt))
 		return "sha256:" + hex.EncodeToString(h[:])
 	}
-	// Redact known secret patterns
 	if cfg.Privacy.RedactSecrets {
 		prompt = secretRegex.ReplaceAllString(prompt, "[REDACTED]")
 	}
-	// Truncate to max length
 	if cfg.Privacy.PromptMaxLength > 0 && len(prompt) > cfg.Privacy.PromptMaxLength {
 		prompt = prompt[:cfg.Privacy.PromptMaxLength] + "..."
 	}
 	return prompt
+}
+
+// isIgnored checks if a file is likely generated, binary, or huge.
+func isIgnored(rel string) bool {
+	ignoredDirs := []string{"node_modules/", "dist/", "build/", "vendor/", ".next/", "target/"}
+	for _, d := range ignoredDirs {
+		if strings.Contains(rel, d) {
+			return true
+		}
+	}
+	// Check extension
+	binExts := []string{".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".tar", ".gz", ".exe", ".dll", ".so", ".dylib", ".lock", "-lock.json", "-lock.yaml"}
+	for _, e := range binExts {
+		if strings.HasSuffix(rel, e) {
+			return true
+		}
+	}
+	return false
 }
 
 func NewHookAgentCmd() *cobra.Command {
@@ -107,6 +122,13 @@ func NewHookAgentCmd() *cobra.Command {
 				return nil
 			}
 
+			if isIgnored(rel) {
+				// For generated files, just attribute the whole file
+				ranges := [][2]int{{1, 999999}}
+				saveDirty(root, agentName, rel, ranges, sessionID, prompt)
+				return nil
+			}
+
 			diff, _ := git.Run(root, "diff", "-U0", "HEAD", "--", rel)
 			if diff == "" {
 				diff, _ = git.Run(root, "diff", "-U0", "--no-index", "/dev/null", rel)
@@ -116,16 +138,20 @@ func NewHookAgentCmd() *cobra.Command {
 				ranges = [][2]int{{1, 999999}}
 			}
 
-			dirtyList := filepath.Join(root, ".git", "auteur", agentName+"-dirty-files.txt")
-			f, err := os.OpenFile(dirtyList, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-			if err == nil {
-				for _, r := range ranges {
-					fmt.Fprintf(f, "%s:%d:%d:%s:%s\n", rel, r[0], r[1], sessionID, prompt)
-				}
-				f.Close()
-			}
+			saveDirty(root, agentName, rel, ranges, sessionID, prompt)
 			return nil
 		},
 	}
 	return cmd
+}
+
+func saveDirty(root, agent, rel string, ranges [][2]int, session, prompt string) {
+	dirtyList := filepath.Join(root, ".git", "auteur", agent+"-dirty-files.txt")
+	f, err := os.OpenFile(dirtyList, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err == nil {
+		for _, r := range ranges {
+			fmt.Fprintf(f, "%s:%d:%d:%s:%s\n", rel, r[0], r[1], session, prompt)
+		}
+		f.Close()
+	}
 }

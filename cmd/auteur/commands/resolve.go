@@ -37,6 +37,16 @@ records to the ledger.`,
 			}
 			ts, _ := git.CommitTime(root, head)
 
+			// Detect renames in this commit to map old paths to new paths
+			renameMap := map[string]string{}
+			diffTree, _ := git.Run(root, "diff-tree", "-M", "-r", "--name-status", head+"^", head)
+			for _, line := range splitLines(diffTree) {
+				parts := strings.Split(line, "	")
+				if len(parts) == 3 && strings.HasPrefix(parts[0], "R") {
+					renameMap[parts[1]] = parts[2]
+				}
+			}
+
 			// Process agent dirty files
 			agentFiles := []string{"claude-code", "cursor"}
 			for _, agent := range agentFiles {
@@ -51,6 +61,9 @@ records to the ledger.`,
 							file := parts[0]
 							start, _ := strconv.Atoi(parts[1])
 							end, _ := strconv.Atoi(parts[2])
+							if newName, ok := renameMap[file]; ok {
+								file = newName
+							}
 							if files[file] {
 								sessionID := ""
 								prompt := ""
