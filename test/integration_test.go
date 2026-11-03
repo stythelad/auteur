@@ -456,3 +456,111 @@ func TestSnapshotHashCollisions(t *testing.T) {
 		t.Fatalf("snapshot collision! both files had content: %s", contentA)
 	}
 }
+
+func TestSafeRelPath(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+
+	// Helper to send the JSON payload to the pre-hook
+
+	// Let's use a helper to send the JSON payload
+	sendPayload := func(path string) (string, error) {
+		payload := `{"tool_input": {"file_path": "` + path + `"}}`
+		cmd := exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+		cmd.Dir = r.dir
+		cmd.Env = r.env
+		cmd.Stdin = strings.NewReader(payload)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	tests := []struct {
+		name        string
+		setup       func()
+		path        string
+		wantErr     bool
+		expectSnaps int
+	}{
+		{
+			name: "File symlink pointing to /etc/passwd",
+			setup: func() {
+				exec.Command("ln", "-s", "/etc/passwd", filepath.Join(r.dir, "badfile.txt")).Run()
+			},
+			path:        filepath.Join(r.dir, "badfile.txt"),
+			wantErr:     true,
+			expectSnaps: 0,
+		},
+		{
+			name: "Directory symlink pointing outside",
+			setup: func() {
+				exec.Command("ln", "-s", "/tmp", filepath.Join(r.dir, "baddir")).Run()
+			},
+			path:        filepath.Join(r.dir, "baddir", "new.txt"),
+			wantErr:     true,
+			expectSnaps: 0,
+		},
+		{
+			name: "New file beneath outside symlink",
+			setup: func() {
+				exec.Command("ln", "-s", "/tmp", filepath.Join(r.dir, "baddir2")).Run()
+			},
+			path:        filepath.Join(r.dir, "baddir2", "deep", "new.txt"),
+			wantErr:     true,
+			expectSnaps: 0,
+		},
+		{
+			name: "Valid symlink inside repo",
+			setup: func() {
+				r.write("real.txt", "hello")
+				exec.Command("ln", "-s", filepath.Join(r.dir, "real.txt"), filepath.Join(r.dir, "link.txt")).Run()
+			},
+			path:        filepath.Join(r.dir, "link.txt"),
+			wantErr:     false,
+			expectSnaps: 1,
+		},
+		{
+			name:        "Ordinary new file",
+			setup:       func() {},
+			path:        filepath.Join(r.dir, "newfile.txt"),
+			wantErr:     false,
+			expectSnaps: 2,
+		},
+		{
+			name:        "Existing file",
+			setup:       func() {},
+			path:        filepath.Join(r.dir, "real.txt"),
+			wantErr:     false,
+			expectSnaps: 2, // Same as valid symlink because it resolves to the same file
+		},
+	}
+
+	snapDir := filepath.Join(r.dir, ".git", "auteur", "snapshots")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup()
+			out, err := sendPayload(tt.path)
+
+			if tt.wantErr {
+				if err == nil && !strings.Contains(out, "refusing") {
+					// The hook swallows errors and returns exit 0, but prints "refusing"
+					// so we check the output.
+					t.Fatalf("expected refusal, got: %s", out)
+				}
+				if !strings.Contains(out, "refusing") {
+					t.Fatalf("expected refusal message, got: %s", out)
+				}
+			} else {
+				if strings.Contains(out, "refusing") {
+					t.Fatalf("unexpected refusal: %s", out)
+				}
+			}
+
+			// Check snapshot count
+			entries, _ := os.ReadDir(snapDir)
+			if len(entries) != tt.expectSnaps {
+				t.Errorf("expected %d snapshots, got %d", tt.expectSnaps, len(entries))
+			}
+		})
+	}
+}
