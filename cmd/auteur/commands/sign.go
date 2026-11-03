@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os/exec"
 
 	"github.com/spf13/cobra"
 
@@ -77,7 +78,17 @@ func NewSignCmd() *cobra.Command {
 				return fmt.Errorf("failed to write ledger: %w", err)
 			}
 
+			// Create an empty Git commit with the signoff trailer, SSH-signed.
+			msg := fmt.Sprintf("chore: signoff on %s\n\nAuteur-Signoff: %s\n", fullTargetSHA[:7], fullTargetSHA)
+			commitCmd := exec.Command("git", "commit", "--allow-empty", "-S", "-m", msg)
+			commitCmd.Dir = root
+			out, err := commitCmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("ledger updated, but failed to create signed git commit (make sure gpg.format=ssh and user.signingkey are set): %v\n%s", err, out)
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "Successfully cryptographically signed off on %s as %s\n", fullTargetSHA[:7], identity)
+			fmt.Fprintf(cmd.OutOrStdout(), "Created SSH-signed Git commit with signoff trailer.\n")
 			return nil
 		},
 	}
