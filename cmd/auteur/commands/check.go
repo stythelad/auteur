@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pokhrelmishan/auteur/internal/git"
-	"github.com/pokhrelmishan/auteur/internal/policy"
-	"github.com/pokhrelmishan/auteur/internal/provenance"
+	"github.com/stythelad/auteur/internal/git"
+	"github.com/stythelad/auteur/internal/policy"
+	"github.com/stythelad/auteur/internal/provenance"
 )
 
 func NewCheckCmd() *cobra.Command {
