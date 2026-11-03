@@ -11,19 +11,28 @@ import (
 
 const Path = ".git/auteur/config.yaml"
 
-// Config is the on-disk Auteur configuration.
-// v1 fields only; policy lives in a separate file later.
-type Config struct {
-	Version int `yaml:"version"`
-	// AgentNames maps a detected agent identifier to a friendly name.
-	// Reserved for the heuristic fallback in a later step.
-	AgentNames map[string]string `yaml:"agent_names,omitempty"`
+type Privacy struct {
+	CapturePrompt    bool `yaml:"capture_prompt"`
+	PromptMaxLength  int  `yaml:"prompt_max_length"`
+	RedactSecrets    bool `yaml:"redact_secrets"`
+	CaptureSessionID bool `yaml:"capture_session_id"`
 }
 
-// Default returns the config written by `auteur init`.
+type Config struct {
+	Version    int               `yaml:"version"`
+	AgentNames map[string]string `yaml:"agent_names,omitempty"`
+	Privacy    Privacy           `yaml:"privacy"`
+}
+
 func Default() Config {
 	return Config{
 		Version: 1,
+		Privacy: Privacy{
+			CapturePrompt:    true,
+			PromptMaxLength:  200,
+			RedactSecrets:    true,
+			CaptureSessionID: true,
+		},
 		AgentNames: map[string]string{
 			"claude": "claude-code",
 			"codex":  "codex",
@@ -32,7 +41,6 @@ func Default() Config {
 	}
 }
 
-// Load reads the config from repoRoot, returning defaults if missing.
 func Load(repoRoot string) (Config, error) {
 	p := filepath.Join(repoRoot, Path)
 	raw, err := os.ReadFile(p)
@@ -49,11 +57,10 @@ func Load(repoRoot string) (Config, error) {
 	return c, nil
 }
 
-// Save writes the config to repoRoot.
 func Save(repoRoot string, c Config) error {
 	p := filepath.Join(repoRoot, Path)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return fmt.Errorf("create .auteur dir: %w", err)
+		return fmt.Errorf("create config dir: %w", err)
 	}
 	raw, err := yaml.Marshal(c)
 	if err != nil {

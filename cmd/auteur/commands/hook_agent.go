@@ -1,17 +1,43 @@
 package commands
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/stythelad/auteur/internal/config"
 	"github.com/stythelad/auteur/internal/git"
 )
+
+var secretRegex = regexp.MustCompile(`(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16})`)
+
+func sanitizePrompt(cfg config.Config, prompt string) string {
+	if prompt == "" {
+		return ""
+	}
+	if !cfg.Privacy.CapturePrompt {
+		// Just return a hash of the prompt instead of the raw text
+		h := sha256.Sum256([]byte(prompt))
+		return "sha256:" + hex.EncodeToString(h[:])
+	}
+	// Redact known secret patterns
+	if cfg.Privacy.RedactSecrets {
+		prompt = secretRegex.ReplaceAllString(prompt, "[REDACTED]")
+	}
+	// Truncate to max length
+	if cfg.Privacy.PromptMaxLength > 0 && len(prompt) > cfg.Privacy.PromptMaxLength {
+		prompt = prompt[:cfg.Privacy.PromptMaxLength] + "..."
+	}
+	return prompt
+}
 
 func NewHookAgentCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -25,6 +51,8 @@ func NewHookAgentCmd() *cobra.Command {
 				return nil
 			}
 
+			cfg, _ := config.Load(root)
+
 			input, err := io.ReadAll(os.Stdin)
 			if err != nil {
 				return err
@@ -32,7 +60,6 @@ func NewHookAgentCmd() *cobra.Command {
 
 			var filePath, sessionID, prompt string
 
-			// Try Claude JSON
 			var claudePayload struct {
 				SessionID string `json:"session_id"`
 				Prompt    string `json:"prompt"`
@@ -46,7 +73,6 @@ func NewHookAgentCmd() *cobra.Command {
 				prompt = claudePayload.Prompt
 			}
 
-			// Try Cursor JSON
 			if filePath == "" {
 				var cursorPayload struct {
 					FilePath  string `json:"filePath"`
@@ -71,6 +97,11 @@ func NewHookAgentCmd() *cobra.Command {
 				return nil
 			}
 
+			if !cfg.Privacy.CaptureSessionID {
+				sessionID = ""
+			}
+			prompt = sanitizePrompt(cfg, prompt)
+
 			rel, err := filepath.Rel(root, filePath)
 			if err != nil {
 				return nil
@@ -85,12 +116,10 @@ func NewHookAgentCmd() *cobra.Command {
 				ranges = [][2]int{{1, 999999}}
 			}
 
-			// Save to dirty file including metadata
 			dirtyList := filepath.Join(root, ".git", "auteur", agentName+"-dirty-files.txt")
 			f, err := os.OpenFile(dirtyList, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 			if err == nil {
 				for _, r := range ranges {
-					// Format: file:start:end:session:prompt
 					fmt.Fprintf(f, "%s:%d:%d:%s:%s\n", rel, r[0], r[1], sessionID, prompt)
 				}
 				f.Close()

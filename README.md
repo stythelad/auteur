@@ -155,6 +155,24 @@ includes a SHA-256 hash of the previous record. If the file is modified outside
 of `auteur`, the hash chain breaks, and `auteur check` will fail instantly with
 a `ledger tampering detected` error.
 
+## Privacy controls
+
+Because agent hooks capture prompt text from your IDE, Auteur includes strict
+privacy controls. By default, it automatically redacts API keys and tokens,
+and truncates prompts to 200 characters.
+
+You can configure this in `.git/auteur/config.yaml`:
+
+    privacy:
+      capture_prompt: true      # Set to false to only store a SHA-256 hash of the prompt
+      prompt_max_length: 200    # Truncate long prompts
+      redact_secrets: true      # Automatically mask API keys/tokens (sk-..., ghp_..., etc.)
+      capture_session_id: true  # Store the IDE session ID
+
+If you are in a highly regulated environment (e.g. SOC2, HIPAA), set
+`capture_prompt: false`. Auteur will still track exactly which lines were
+written by the AI, but it will never store the prompt text.
+
 ## CI integration
 
 We provide a composite GitHub Action that handles installation and execution.
