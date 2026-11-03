@@ -206,13 +206,14 @@ func TestSignFailsIfTrustRootMissing(t *testing.T) {
 	r.write("a.txt", "x\n")
 	r.commitAll("base")
 	r.mustRun("init")
+	keyPath := generateTestKey(t, r.dir)
 
 	r.mustRun("wrap", "--agent", "claude-code", "--",
 		"sh", "-c", "echo 'y' >> a.txt")
 	r.commitAll("agent edit")
 
 	// Do NOT create .auteur/allowed_signers
-	out, err := r.run("sign")
+	out, err := r.run("sign", "--ssh-key", keyPath)
 	if err == nil {
 		t.Fatalf("expected sign to fail without trust root, got: %s", out)
 	}
@@ -226,6 +227,7 @@ func TestSignFailsIfTrustRootEmpty(t *testing.T) {
 	r.write("a.txt", "x\n")
 	r.commitAll("base")
 	r.mustRun("init")
+	keyPath := generateTestKey(t, r.dir)
 
 	r.mustRun("wrap", "--agent", "claude-code", "--",
 		"sh", "-c", "echo 'y' >> a.txt")
@@ -234,7 +236,7 @@ func TestSignFailsIfTrustRootEmpty(t *testing.T) {
 	// Create an empty trust root
 	r.write(".auteur/allowed_signers", "trusted_signers: {}\n")
 
-	out, err := r.run("sign")
+	out, err := r.run("sign", "--ssh-key", keyPath)
 	if err == nil {
 		t.Fatalf("expected sign to fail with empty trust root, got: %s", out)
 	}
@@ -248,6 +250,7 @@ func TestSignFailsIfKeyUntrusted(t *testing.T) {
 	r.write("a.txt", "x\n")
 	r.commitAll("base")
 	r.mustRun("init")
+	keyPath := generateTestKey(t, r.dir)
 
 	r.mustRun("wrap", "--agent", "claude-code", "--",
 		"sh", "-c", "echo 'y' >> a.txt")
@@ -256,7 +259,7 @@ func TestSignFailsIfKeyUntrusted(t *testing.T) {
 	// Add a *fake* key to the trust root
 	r.write(".auteur/allowed_signers", "trusted_signers:\n  \"test\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKey\"\n")
 
-	out, err := r.run("sign")
+	out, err := r.run("sign", "--ssh-key", keyPath)
 	if err == nil {
 		t.Fatalf("expected sign to fail with untrusted key, got: %s", out)
 	}
@@ -376,4 +379,13 @@ func TestPromptRedaction(t *testing.T) {
 	if !strings.Contains(string(ledger), "[REDACTED]") {
 		t.Fatalf("expected [REDACTED] in ledger: %s", ledger)
 	}
+}
+func generateTestKey(t *testing.T, dir string) string {
+	t.Helper()
+	keyPath := filepath.Join(dir, "test_key")
+	cmd := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-q")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen: %v: %s", err, out)
+	}
+	return keyPath
 }
