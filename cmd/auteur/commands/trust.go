@@ -17,7 +17,7 @@ func NewTrustCmd() *cobra.Command {
 		Use:   "trust",
 		Short: "Manage the committed trust root (.auteur/allowed_signers)",
 	}
-	cmd.AddCommand(NewTrustAddCmd())
+	cmd.AddCommand(NewTrustAddCmd(), NewTrustListCmd(), NewTrustRemoveCmd())
 	return cmd
 }
 
