@@ -1,6 +1,25 @@
 # Changelog
 
+## v0.5.0 — 2026-11-03
+
+### Security & Privacy
+- **Opt-in prompt capture:** `capture_prompt` now defaults to `false`. Prompt text is only stored if explicitly enabled.
+- **Expanded secret redaction:** Before writing prompts to disk, Auteur now redacts AWS keys, JWTs, private keys, connection strings, Slack tokens, and generic `password=`/`token=` patterns.
+- **Authoritative trust root:** `auteur check --ci-base main` reads the trust root from the base branch, fails if it's missing, and rejects any PR that modifies it.
+- **Line-level CI validation:** CI compares the exact changed lines in the PR diff against provenance records. If a line was changed but has no record, the build fails.
+- **PreToolUse snapshotting:** IDE hooks capture file state before and after the AI edit. Human uncommitted changes are never attributed to the AI.
+- **Safe IDE config merging:** `auteur init` merges hooks into existing `.claude/settings.json` and `.cursor/hooks.json` without destroying user config.
+- **Fail-closed verification:** `check`, `verify`, and `sign` fail if the trust root is missing, empty, or doesn't contain the signer's key.
+- **SSH-signed Git commits:** `auteur sign` creates an empty Git commit signed with your SSH key (`git commit -S`).
+- **Signature payload fix:** Signatures no longer include `PrevHash`, allowing multi-reviewer approvals and out-of-order signing.
+
+### Added
+- `auteur trust list` and `auteur trust remove`.
+- `auteur hook-agent-pre` for snapshotting.
+- Regression tests for T1-T6 attacks, trust-root enforcement, line-level CI validation, PreToolUse snapshotting, prompt redaction, and CI trust root authority.
+
 ## v0.4.0 — 2026-11-03
+
 
 ### Security (Massive overhaul based on external audit)
 - **Committed trust root:** Signers are now managed in a committed `.auteur/allowed_signers` file via `auteur trust add`.
