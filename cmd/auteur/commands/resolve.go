@@ -35,25 +35,25 @@ records to the ledger.`,
 			}
 			ts, _ := git.CommitTime(root, head)
 
-			// Check for Claude hook dirty files
-			dirtyList := filepath.Join(root, ".git", "auteur", "claude-dirty-files.txt")
-			if dirtyBytes, err := os.ReadFile(dirtyList); err == nil {
-				for _, line := range splitLines(string(dirtyBytes)) {
-					if files[line] {
-						// Mark this file as definitely agent-authored by Claude
-						rec := provenance.Record{
-							Commit:     head,
-							Timestamp:  time.Now().UTC(),
-							Confidence: provenance.ConfidenceHigh,
-							Agent:      &provenance.Agent{Name: "claude-code"},
-							// We only know the whole file was touched, not the exact lines.
-							// So we mark line 1 to EOF (using a large number for End)
-							Lines: []provenance.LineRange{{File: line, Start: 1, End: 999999, Origin: provenance.OriginAgent}},
+			// Process agent dirty files
+			agentFiles := []string{"claude-code", "cursor"}
+			for _, agent := range agentFiles {
+				dirtyList := filepath.Join(root, ".git", "auteur", agent+"-dirty-files.txt")
+				if dirtyBytes, err := os.ReadFile(dirtyList); err == nil {
+					for _, line := range splitLines(string(dirtyBytes)) {
+						if files[line] {
+							rec := provenance.Record{
+								Commit:     head,
+								Timestamp:  time.Now().UTC(),
+								Confidence: provenance.ConfidenceHigh,
+								Agent:      &provenance.Agent{Name: agent},
+								Lines:      []provenance.LineRange{{File: line, Start: 1, End: 999999, Origin: provenance.OriginAgent}},
+							}
+							provenance.Open(root).Append(rec)
 						}
-						provenance.Open(root).Append(rec)
 					}
+					os.Remove(dirtyList) // Clear after processing
 				}
-				os.Remove(dirtyList) // Clear the list after processing
 			}
 
 			n, err := provenance.ResolvePending(root, head, ts, files)

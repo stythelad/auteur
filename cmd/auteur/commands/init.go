@@ -83,7 +83,7 @@ func NewInitCmd() *cobra.Command {
         "hooks": [
           {
             "type": "command",
-            "command": "auteur hook-claude"
+            "command": "auteur hook-agent claude-code"
           }
         ]
       }
@@ -92,6 +92,22 @@ func NewInitCmd() *cobra.Command {
 }`
 				os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(claudeSettings), 0o644)
 				fmt.Fprintf(cmd.OutOrStdout(), "  claude: .claude/settings.json (installed)\n")
+			}
+
+			// Write Cursor settings
+			cursorDir := filepath.Join(root, ".cursor")
+			if err := os.MkdirAll(cursorDir, 0o755); err == nil {
+				cursorSettings := `{
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "auteur hook-agent cursor"
+      }
+    ]
+  }
+}`
+				os.WriteFile(filepath.Join(cursorDir, "hooks.json"), []byte(cursorSettings), 0o644)
+				fmt.Fprintf(cmd.OutOrStdout(), "  cursor: .cursor/hooks.json (installed)\n")
 			}
 
 			return nil
