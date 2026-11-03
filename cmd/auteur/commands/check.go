@@ -41,6 +41,14 @@ func NewCheckCmd() *cobra.Command {
 				base = ciBase
 			}
 
+			// Reject PRs that modify the trust root.
+			if base != "" {
+				changedOut, _ := git.Run(root, "diff", "--name-only", base+"..HEAD", "--", ".auteur/allowed_signers")
+				if strings.TrimSpace(changedOut) != "" {
+					return fmt.Errorf("security violation: PR modifies the trust root (.auteur/allowed_signers). trust root changes must be merged by an administrator into the base branch")
+				}
+			}
+
 			skipSet := map[string]bool{}
 			if base != "" {
 				out, revErr := git.Run(root, "rev-list", base)

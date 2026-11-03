@@ -268,8 +268,10 @@ func TestCheckLineLevelProvenance(t *testing.T) {
 	r := newRepo(t)
 	r.mustRun("init")
 	r.write("auth/login.py", "line 1\n")
-	// Force-add the policy to main (since .auteur/ is gitignored)
+	// Force-add the policy and trust root to main
+	r.write(".auteur/allowed_signers", "trusted_signers:\n  \"test\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI\"\n")
 	r.git("add", "-f", ".auteur/policy.yaml")
+	r.git("add", "-f", ".auteur/allowed_signers")
 	r.commitAll("base and policy")
 
 	r.git("checkout", "-q", "-b", "feature")
@@ -296,5 +298,47 @@ func TestCheckLineLevelProvenance(t *testing.T) {
 	// The human's line 3 should be flagged (no record)
 	if !strings.Contains(out, "auth/login.py:3-3") {
 		t.Fatalf("expected violation on line 3, got: %s", out)
+	}
+}
+
+func TestCIRejectsMissingBaseTrustRoot(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+	r.write("auth/login.py", "base\n")
+	r.commitAll("base")
+
+	r.git("checkout", "-q", "-b", "feature")
+	r.write("auth/login.py", "base\nevil\n")
+	r.commitAll("attack")
+
+	out, err := r.run("check", "--ci-base", "main")
+	if err == nil {
+		t.Fatalf("expected error, got: %s", out)
+	}
+	if !strings.Contains(out, "does not contain .auteur/allowed_signers") {
+		t.Fatalf("expected missing trust root error, got: %s", out)
+	}
+}
+
+func TestCIRejectsPRTrustRootModification(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+	r.write("auth/login.py", "base\n")
+	// Write the trust root manually (SSH keys in CI tests are tricky)
+	r.write(".auteur/allowed_signers", "trusted_signers:\n  \"test\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI\"\n")
+	r.git("add", "-f", ".auteur/allowed_signers")
+	r.commitAll("base + trust root")
+
+	r.git("checkout", "-q", "-b", "feature")
+	r.write(".auteur/allowed_signers", "trusted_signers:\n  \"test\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI\"\n  \"hacker\": \"ssh-ed25519 HACKER\"\n")
+	r.git("add", "-f", ".auteur/allowed_signers")
+	r.commitAll("attacker modifies trust root")
+
+	out, err := r.run("check", "--ci-base", "main")
+	if err == nil {
+		t.Fatalf("expected error, got: %s", out)
+	}
+	if !strings.Contains(out, "PR modifies the trust root") {
+		t.Fatalf("expected trust root modification error, got: %s", out)
 	}
 }

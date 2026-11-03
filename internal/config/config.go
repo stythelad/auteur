@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/stythelad/auteur/internal/git"
 
@@ -106,11 +105,8 @@ func Save(repoRoot string, c Config) error {
 func LoadTrustRootFromGit(repoRoot, ref string) (map[string]string, error) {
 	raw, err := git.Run(repoRoot, "show", ref+":"+TrustRootPath)
 	if err != nil {
-		// If the file doesn't exist on the base branch, return nil (fail closed)
-		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "exists on disk, but not in") {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("git show %s:%s: %w", ref, TrustRootPath, err)
+		// Fail explicitly if the base branch does not have a trust root.
+		return nil, fmt.Errorf("base branch %q does not contain %s: %w", ref, TrustRootPath, err)
 	}
 
 	var tr TrustRoot
