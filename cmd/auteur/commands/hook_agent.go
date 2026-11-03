@@ -143,8 +143,11 @@ func NewHookAgentCmd() *cobra.Command {
 			if data, err := os.ReadFile(snapPath); err == nil {
 				beforeContent = data
 			} else {
-				// No pre-tool snapshot. This means the PreToolUse hook didn't fire.
-				// Fall back to the full file (safe, conservative).
+				// No pre-tool snapshot.
+				// This happens for Cursor (which lacks a pre-edit hook) or if the
+				// pre-hook failed to fire. Fall back to attributing the whole file.
+				// This is safe (fails closed) but coarse.
+				fmt.Fprintf(os.Stderr, "auteur: warning: no pre-edit snapshot found for %s. attributing whole file (coarse mode).\n", rel)
 				saveDirty(root, agentName, rel, [][2]int{{1, 999999}}, sessionID, prompt)
 				return nil
 			}

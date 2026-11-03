@@ -41,11 +41,20 @@ your repo. No server, no database, no telemetry.
 
 You don't need to wrap your agents. `auteur init` installs native hooks for:
 
-- **Claude Code** (`.claude/settings.json`)
-- **Cursor** (`.cursor/hooks.json`)
+- **Claude Code** (`.claude/settings.json`) — **Precise (line-level)**
+- **Cursor** (`.cursor/hooks.json`) — **Coarse (file-level)**
 
-When they edit a file, the hook diffs it in the background and records exactly
-which lines changed (including the session ID and prompt hash).
+**Claude Code** supports both pre-edit and post-edit hooks. Auteur uses the
+pre-edit hook to snapshot the file *before* the AI touches it. When the AI
+finishes, it diffs the before/after state. This means if you have uncommitted
+human changes, they are never attributed to the AI.
+
+**Cursor** currently only exposes a post-edit hook (`afterFileEdit`). Because
+Auteur cannot see the file state *before* Cursor edits it, it falls back to
+attributing the **entire file** to the agent (with a terminal warning). This is
+safe (it fails closed), but it may over-attribute human changes. For precise
+Cursor attribution, use `auteur wrap`.
+
 For other agents (Copilot, Codex, etc.), use `auteur wrap`.
 
 
