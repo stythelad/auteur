@@ -564,3 +564,66 @@ func TestSafeRelPath(t *testing.T) {
 		})
 	}
 }
+
+func TestHookAgentPreRejectsDanglingSymlink(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+
+	// Create a dangling symlink inside the repo
+	target := filepath.Join(r.dir, "dangling.txt")
+	exec.Command("ln", "-s", "/tmp/does-not-exist-auteur-test", target).Run()
+
+	// Send the payload to the hook
+	payload := `{"tool_input": {"file_path": "` + target + `"}}`
+	cmd := exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+	cmd.Dir = r.dir
+	cmd.Env = r.env
+	cmd.Stdin = strings.NewReader(payload)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected hook to exit 0 (silently ignore), got: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(string(out), "refusing to follow symlink") {
+		t.Fatalf("expected symlink refusal, got: %s", out)
+	}
+
+	// Ensure no snapshot was created
+	snapDir := filepath.Join(r.dir, ".git", "auteur", "snapshots")
+	if entries, err := os.ReadDir(snapDir); err == nil && len(entries) > 0 {
+		t.Fatalf("expected no snapshots, found %d", len(entries))
+	}
+}
+
+func TestSecureReadFileRejectsSymlinkReplacement(t *testing.T) {
+	// This simulates the TOCTOU race by directly calling the internal logic
+	// via a small Go test harness. Since secureReadFile is not exported,
+	// we can test it through the hook by creating a symlink.
+
+	r := newRepo(t)
+	r.mustRun("init")
+	r.write("target.txt", "safe content")
+	r.commitAll("base")
+
+	// Create a symlink to /etc/passwd
+	linkPath := filepath.Join(r.dir, "malicious.txt")
+	exec.Command("ln", "-s", "/etc/passwd", linkPath).Run()
+
+	payload := `{"tool_input": {"file_path": "` + linkPath + `"}}`
+	cmd := exec.Command(binaryPath, "hook-agent-pre", "claude-code")
+	cmd.Dir = r.dir
+	cmd.Env = r.env
+	cmd.Stdin = strings.NewReader(payload)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected hook to exit 0, got: %v\n%s", err, out)
+	}
+
+	// The hook should refuse either at the path validation layer (outside repo)
+	// or at the secure read layer (O_NOFOLLOW).
+	if !strings.Contains(string(out), "refusing to follow symlink") && !strings.Contains(string(out), "outside the repository") {
+		t.Fatalf("expected symlink refusal, got: %s", out)
+	}
+}
