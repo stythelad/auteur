@@ -34,7 +34,7 @@ by an agent, and with what confidence:
 - low    — reserved for future heuristics
 - unknown — never assume human; absence of a record means unknown
 
-The ledger is a plain text file (.auteur/provenance.jsonl) committed with
+The ledger is a plain text file (.git/auteur/provenance.jsonl) committed with
 your repo. No server, no database, no telemetry.
 
 ### Zero-config agent capture
@@ -65,8 +65,8 @@ In any git repository:
 
     auteur init
 
-That creates .auteur/config.yaml, .auteur/policy.yaml, an empty
-.auteur/provenance.jsonl, and installs a post-commit hook.
+That creates .git/auteur/config.yaml, .git/auteur/policy.yaml, an empty
+.git/auteur/provenance.jsonl, and installs a post-commit hook.
 
 ### Record agent work
 
@@ -101,7 +101,7 @@ Exits non-zero on violations.
 
 ## Policy
 
-.auteur/policy.yaml supports four rule types:
+.git/auteur/policy.yaml supports four rule types:
 
     version: 1
     rules:
@@ -145,9 +145,7 @@ public key, and the cryptographic signature.
 Because the signature is tied to your SSH key, you cannot forge someone else's
 identity. When CI runs `auteur check`, it verifies the hash chain **and** every
 cryptographic signature, ensuring that a human actually approved that specific
-code.
-You then commit the updated `.auteur/provenance.jsonl` file to your branch.
-The `post-commit` hook does not do this automatically.
+code. The signoff is saved directly to the local `.git/auteur/provenance.jsonl` file.
 
 ### Tamper-evident ledger
 
@@ -181,6 +179,7 @@ We provide a composite GitHub Action that handles installation and execution.
 | Command | Purpose |
 |---|---|
 | `auteur init` | Create ledger, config, policy, install post-commit hook |
+| `auteur sign <sha>` | Cryptographically sign off on an agent commit |
 | `auteur wrap -- <cmd>` | Run a command and record its line changes as pending |
 | `auteur blame <file>:<line>` | Show provenance for a single line |
 | `auteur check` | Evaluate policy against the ledger |
@@ -193,10 +192,11 @@ We provide a composite GitHub Action that handles installation and execution.
 
 ## Design notes
 
-**Why a sidecar ledger, not git notes?**
-Git notes don't survive rebases cleanly and are awkward to query. A JSONL
-file committed with the repo is diffable, mergeable, and travels with
-every clone.
+**Why a ledger in `.git/auteur/`?**
+Storing the ledger in the working tree caused merge conflicts and broke
+`git worktree`. By moving it to `.git/auteur/`, it is shared safely across
+all worktrees and never accidentally committed. The ledger is a JSONL file
+that is append-only and crash-safe.
 
 **Why JSONL, not a single JSON array?**
 Append-only writes are O(1) and crash-safe: a partial write corrupts at
@@ -225,7 +225,7 @@ real signal, but it's not the same as a wrap-recorded high.
 
 ## Status
 
-v0.2 — usable, opinionated, early. Breaking changes possible before v1.
+v0.3 — usable, opinionated, early. Breaking changes possible before v1.
 
 ## Prior art
 
@@ -248,10 +248,6 @@ the binary; otherwise hooks silently no-op (`|| true`). If attribution
 isn't appearing after a commit, run `auteur resolve-pending --verbose`
 manually and check `which auteur` points at the new build.
 
-**Ledger commits and rebases.** `.auteur/provenance.jsonl` is a tracked
-file. If you commit it on a feature branch and then rebase, git may
-complain about local changes. Either `git rebase --autostash`, or add
-`.auteur/` to `.gitignore` during development and commit it periodically.
 
 ## License
 
