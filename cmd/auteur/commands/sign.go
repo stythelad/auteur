@@ -44,6 +44,9 @@ func NewSignCmd() *cobra.Command {
 			found := false
 			for i := range recs {
 				if recs[i].Commit == fullTargetSHA {
+					if len(recs[i].Review.Signoffs) > 0 {
+						return fmt.Errorf("commit %s is already signed; refusing to append a second signature", fullTargetSHA[:7])
+					}
 					if err := provenance.SignRecord(&recs[i], identity, sshKey); err != nil {
 						return fmt.Errorf("failed to sign record: %w", err)
 					}

@@ -15,6 +15,6 @@ answer "was this written by a model?"`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	cmd.AddCommand(NewInitCmd(), NewBlameCmd(), NewWrapCmd(), NewPendingCmd(), NewResolveCmd(), NewCheckCmd(), NewScanHistoryCmd(), NewRewriteCmd(), NewSignCmd(), NewHookAgentCmd(), NewVerifyCmd())
+	cmd.AddCommand(NewInitCmd(), NewBlameCmd(), NewWrapCmd(), NewPendingCmd(), NewResolveCmd(), NewCheckCmd(), NewScanHistoryCmd(), NewRewriteCmd(), NewSignCmd(), NewHookAgentCmd(), NewVerifyCmd(), NewTrustCmd())
 	return cmd
 }

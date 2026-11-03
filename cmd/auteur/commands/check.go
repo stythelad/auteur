@@ -61,7 +61,10 @@ func NewCheckCmd() *cobra.Command {
 				if err := provenance.VerifyLedger(recs); err != nil {
 					return fmt.Errorf("security check failed: %w", err)
 				}
-				cfg, _ := config.Load(root)
+				cfg, err := config.Load(root)
+				if err != nil {
+					return fmt.Errorf("load config: %w", err)
+				}
 				if err := provenance.VerifySignoffs(recs, cfg.TrustedSigners); err != nil {
 					return fmt.Errorf("cryptographic verification failed: %w", err)
 				}

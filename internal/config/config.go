@@ -10,6 +10,7 @@ import (
 )
 
 const Path = ".git/auteur/config.yaml"
+const TrustRootPath = ".auteur/allowed_signers"
 
 type Privacy struct {
 	CapturePrompt    bool `yaml:"capture_prompt"`
@@ -22,7 +23,7 @@ type Config struct {
 	Version        int               `yaml:"version"`
 	AgentNames     map[string]string `yaml:"agent_names,omitempty"`
 	Privacy        Privacy           `yaml:"privacy"`
-	TrustedSigners map[string]string `yaml:"trusted_signers,omitempty"` // identity -> public key
+	TrustedSigners map[string]string `yaml:"trusted_signers,omitempty"`
 }
 
 func Default() Config {
@@ -39,11 +40,28 @@ func Default() Config {
 			"codex":  "codex",
 			"cursor": "cursor",
 		},
-		TrustedSigners: map[string]string{},
+		TrustedSigners: map[string]string{}, // Empty by default (fails closed)
 	}
 }
 
 func Load(repoRoot string) (Config, error) {
+	// First, try to load the committed trust root (.auteur/allowed_signers)
+	trustRootPath := filepath.Join(repoRoot, TrustRootPath)
+	trustRaw, err := os.ReadFile(trustRootPath)
+	if err == nil {
+		var c Config
+		if err := yaml.Unmarshal(trustRaw, &c); err != nil {
+			return Config{}, fmt.Errorf("parse trust root %s: %w", TrustRootPath, err)
+		}
+		// Merge with defaults
+		def := Default()
+		if c.Privacy == (Privacy{}) {
+			c.Privacy = def.Privacy
+		}
+		return c, nil
+	}
+
+	// Fallback to local config
 	p := filepath.Join(repoRoot, Path)
 	raw, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {

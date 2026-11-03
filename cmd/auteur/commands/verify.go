@@ -32,7 +32,10 @@ func NewVerifyCmd() *cobra.Command {
 			}
 
 			integrityErr := provenance.VerifyLedger(recs)
-			cfg, _ := config.Load(root)
+			cfg, err := config.Load(root)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
 			authErr := provenance.VerifySignoffs(recs, cfg.TrustedSigners)
 
 			fmt.Fprintf(cmd.OutOrStdout(), "=== Auteur Ledger Audit ===\n")

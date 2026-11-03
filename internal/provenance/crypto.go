@@ -145,15 +145,17 @@ func VerifySignoffs(recs []Record, trustedSigners map[string]string) error {
 		}
 
 		for _, s := range r.Review.Signoffs {
-			// Check against trusted keys if provided
-			if len(trustedSigners) > 0 {
-				trustedKey, ok := trustedSigners[s.Identity]
-				if !ok {
-					return fmt.Errorf("untrusted signer %q for commit %s (key not in config)", s.Identity, r.Commit[:7])
-				}
-				if trustedKey != s.PublicKey {
-					return fmt.Errorf("public key mismatch for %q on commit %s: the key used to sign does not match the trusted key in config", s.Identity, r.Commit[:7])
-				}
+			// FAIL CLOSED: If there are no trusted signers, we cannot verify identity.
+			if len(trustedSigners) == 0 {
+				return fmt.Errorf("provenance contains a signoff, but no trusted_signers are configured. Add keys to .auteur/allowed_signers or .git/auteur/config.yaml")
+			}
+
+			trustedKey, ok := trustedSigners[s.Identity]
+			if !ok {
+				return fmt.Errorf("untrusted signer %q for commit %s (key not in trusted_signers)", s.Identity, r.Commit[:7])
+			}
+			if trustedKey != s.PublicKey {
+				return fmt.Errorf("public key mismatch for %q on commit %s: the key used to sign does not match the trusted key", s.Identity, r.Commit[:7])
 			}
 
 			if err := VerifySignature(hashToVerify, s.PublicKey, s.Signature); err != nil {
