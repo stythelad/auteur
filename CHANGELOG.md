@@ -1,6 +1,18 @@
 # Changelog
 
+## v0.5.1 — 2026-11-03
+
+### Security & Fixes
+- **Path traversal hardening:** Validated that file paths resolved during IDE hook snapshots remain strictly inside the repository.
+- **Snapshot collision resistance:** Replaced the slash-to-underscore snapshot naming scheme with SHA-256 hashes to prevent file overwrites.
+- **Cursor limitation:** Documented that Cursor uses coarse (file-level) attribution because it lacks a pre-edit hook.
+- **CI test fixes:** Generated ephemeral SSH keys in the integration tests to prevent CI failures on runners without `~/.ssh`.
+
+### Added
+- Regression tests for path traversal and snapshot collisions.
+
 ## v0.5.0 — 2026-11-03
+
 
 ### Security & Privacy
 - **Opt-in prompt capture:** `capture_prompt` now defaults to `false`. Prompt text is only stored if explicitly enabled.
