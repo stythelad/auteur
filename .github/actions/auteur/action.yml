@@ -3,6 +3,14 @@ description: 'Enforce AI provenance policies on pull requests'
 branding:
   icon: 'shield'
   color: 'purple'
+inputs:
+  base-ref:
+    description: 'The base branch to compare against (e.g., main)'
+    required: true
+  auteur-version:
+    description: 'The exact version of Auteur to install'
+    required: false
+    default: 'v0.3.0'
 runs:
   using: 'composite'
   steps:
@@ -13,8 +21,12 @@ runs:
     
     - name: Install Auteur
       shell: bash
-      run: go install github.com/stythelad/auteur/cmd/auteur@latest
+      env:
+        AUTEUR_VERSION: ${{ inputs.auteur-version }}
+      run: go install github.com/stythelad/auteur/cmd/auteur@${AUTEUR_VERSION}
     
     - name: Run Auteur Check
       shell: bash
-      run: auteur check --pr-base ${{ github.base_ref }}
+      env:
+        BASE_REF: ${{ inputs.base-ref }}
+      run: auteur check --pr-base "$BASE_REF"

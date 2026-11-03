@@ -13,3 +13,6 @@ jobs:
       
       - name: Run Auteur Check
         uses: ./.github/actions/auteur
+        with:
+          base-ref: ${{ github.base_ref }}
+          auteur-version: 'v0.3.0'
