@@ -41,6 +41,15 @@ func secureReadFile(root, target string) ([]byte, error) {
 	defer unix.Close(rootFd)
 
 	currentFd := rootFd
+	// Ensure we close the currentFd if it's not the rootFd on any return path.
+	// We will manage ownership manually and use a flag to track.
+	needCloseCurrent := false
+	defer func() {
+		if needCloseCurrent && currentFd != rootFd {
+			unix.Close(currentFd)
+		}
+	}()
+
 	parts := strings.Split(rel, string(filepath.Separator))
 
 	for i, part := range parts {
@@ -54,9 +63,6 @@ func secureReadFile(root, target string) ([]byte, error) {
 		}
 
 		fd, err := unix.Openat(currentFd, part, flags, 0)
-		if currentFd != rootFd {
-			unix.Close(currentFd)
-		}
 		if err != nil {
 			if err == unix.ENOENT {
 				if isLast {
@@ -69,27 +75,32 @@ func secureReadFile(root, target string) ([]byte, error) {
 			}
 			return nil, err
 		}
+
+		// If we have a previous directory open, close it now that we've opened the next one.
+		if needCloseCurrent && currentFd != rootFd {
+			unix.Close(currentFd)
+		}
 		currentFd = fd
+		needCloseCurrent = true
 	}
 
 	// Verify the final file descriptor points to a regular file
 	var stat unix.Stat_t
 	if err := unix.Fstat(currentFd, &stat); err != nil {
-		unix.Close(currentFd)
 		return nil, fmt.Errorf("fstat failed: %w", err)
 	}
 
 	mode := stat.Mode & unix.S_IFMT
 	if mode != unix.S_IFREG {
-		unix.Close(currentFd)
 		return nil, fmt.Errorf("refusing to read non-regular file (mode %o)", stat.Mode)
 	}
 
 	file := os.NewFile(uintptr(currentFd), target)
 	if file == nil {
-		unix.Close(currentFd)
 		return nil, fmt.Errorf("invalid fd")
 	}
+	// We successfully handed off the FD to os.File, so prevent the deferred close.
+	needCloseCurrent = false
 	defer file.Close()
 
 	return io.ReadAll(file)
