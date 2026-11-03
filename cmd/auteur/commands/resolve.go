@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -40,17 +42,28 @@ records to the ledger.`,
 			for _, agent := range agentFiles {
 				dirtyList := filepath.Join(root, ".git", "auteur", agent+"-dirty-files.txt")
 				if dirtyBytes, err := os.ReadFile(dirtyList); err == nil {
+					var lines []provenance.LineRange
 					for _, line := range splitLines(string(dirtyBytes)) {
-						if files[line] {
-							rec := provenance.Record{
-								Commit:     head,
-								Timestamp:  time.Now().UTC(),
-								Confidence: provenance.ConfidenceHigh,
-								Agent:      &provenance.Agent{Name: agent},
-								Lines:      []provenance.LineRange{{File: line, Start: 1, End: 999999, Origin: provenance.OriginAgent}},
+						// Format: file:start:end
+						parts := strings.Split(line, ":")
+						if len(parts) == 3 {
+							file := parts[0]
+							start, _ := strconv.Atoi(parts[1])
+							end, _ := strconv.Atoi(parts[2])
+							if files[file] {
+								lines = append(lines, provenance.LineRange{File: file, Start: start, End: end, Origin: provenance.OriginAgent})
 							}
-							provenance.Open(root).Append(rec)
 						}
+					}
+					if len(lines) > 0 {
+						rec := provenance.Record{
+							Commit:     head,
+							Timestamp:  time.Now().UTC(),
+							Confidence: provenance.ConfidenceHigh,
+							Agent:      &provenance.Agent{Name: agent},
+							Lines:      lines,
+						}
+						provenance.Open(root).Append(rec)
 					}
 					os.Remove(dirtyList) // Clear after processing
 				}

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,7 +22,7 @@ func NewHookAgentCmd() *cobra.Command {
 			agentName := args[0]
 			root, err := git.RepoRoot(".")
 			if err != nil {
-				return nil // Not in a repo, ignore
+				return nil
 			}
 
 			input, err := io.ReadAll(os.Stdin)
@@ -29,10 +30,7 @@ func NewHookAgentCmd() *cobra.Command {
 				return err
 			}
 
-			// Try to parse the various JSON formats (Claude, Cursor, etc.)
 			var filePath string
-
-			// Format 1: Claude Code ({"tool_input": {"file_path": "..."}})
 			var claudePayload struct {
 				ToolInput struct {
 					FilePath string `json:"file_path"`
@@ -41,8 +39,6 @@ func NewHookAgentCmd() *cobra.Command {
 			if json.Unmarshal(input, &claudePayload) == nil && claudePayload.ToolInput.FilePath != "" {
 				filePath = claudePayload.ToolInput.FilePath
 			}
-
-			// Format 2: Cursor ({"filePath": "..."})
 			if filePath == "" {
 				var cursorPayload struct {
 					FilePath string `json:"filePath"`
@@ -51,8 +47,6 @@ func NewHookAgentCmd() *cobra.Command {
 					filePath = cursorPayload.FilePath
 				}
 			}
-
-			// Format 3: Just a raw path in stdin
 			if filePath == "" {
 				raw := strings.TrimSpace(string(input))
 				if !strings.HasPrefix(raw, "{") && raw != "" {
@@ -61,20 +55,34 @@ func NewHookAgentCmd() *cobra.Command {
 			}
 
 			if filePath == "" {
-				return nil // Nothing to do
+				return nil
 			}
 
-			// Make path relative to repo root
 			rel, err := filepath.Rel(root, filePath)
 			if err != nil {
 				return nil
 			}
 
-			// Append to dirty files list
+			// Try to diff the file to get specific line ranges.
+			// If the file is untracked, diff shows the whole file.
+			diff, _ := git.Run(root, "diff", "-U0", "HEAD", "--", rel)
+			if diff == "" {
+				// Maybe it's untracked?
+				diff, _ = git.Run(root, "diff", "-U0", "--no-index", "/dev/null", rel)
+			}
+
+			ranges := git.AddedLines(diff)
+			if len(ranges) == 0 {
+				// Fallback if diff is empty (e.g. hook fired but nothing changed)
+				ranges = [][2]int{{1, 999999}}
+			}
+
 			dirtyList := filepath.Join(root, ".git", "auteur", agentName+"-dirty-files.txt")
 			f, err := os.OpenFile(dirtyList, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 			if err == nil {
-				f.WriteString(rel + "\n")
+				for _, r := range ranges {
+					fmt.Fprintf(f, "%s:%d:%d\n", rel, r[0], r[1])
+				}
 				f.Close()
 			}
 			return nil
