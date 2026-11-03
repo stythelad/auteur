@@ -9,33 +9,32 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 )
 
-// LedgerPath is the canonical location of the provenance file,
-// relative to the repo root.
-const LedgerPath = ".auteur/provenance.jsonl"
+const LedgerDir = ".git/auteur"
+const LedgerPath = ".git/auteur/provenance.jsonl"
+const LockPath = ".git/auteur/lock"
 
-// Store is an append-only JSONL ledger.
-// It is safe for concurrent use within a single process.
 type Store struct {
 	mu   sync.Mutex
 	path string
+	lock string
 }
 
-// Open returns a Store rooted at the given repo root.
-// It does not create the file; call Init if the ledger may not exist yet.
+// Open returns a Store rooted at the given repo root's .git directory.
 func Open(repoRoot string) *Store {
-	return &Store{path: filepath.Join(repoRoot, LedgerPath)}
+	return &Store{
+		path: filepath.Join(repoRoot, LedgerPath),
+		lock: filepath.Join(repoRoot, LockPath),
+	}
 }
 
-// Path returns the absolute path of the ledger file.
 func (s *Store) Path() string { return s.path }
 
-// Init creates the .auteur directory and an empty ledger if missing.
-// It is idempotent.
 func (s *Store) Init() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return fmt.Errorf("create .auteur dir: %w", err)
+		return fmt.Errorf("create auteur dir: %w", err)
 	}
 	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -44,8 +43,22 @@ func (s *Store) Init() error {
 	return f.Close()
 }
 
-// Append writes a single record to the ledger.
-// Records are newline-delimited JSON objects.
+func (s *Store) lockFile() (func(), error) {
+	f, err := os.OpenFile(s.lock, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	// Basic unix flock
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+	}, nil
+}
+
 func (s *Store) Append(r Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -54,13 +67,18 @@ func (s *Store) Append(r Record) error {
 		return errors.New("record missing commit")
 	}
 
+	unlock, err := s.lockFile()
+	if err != nil {
+		return fmt.Errorf("lock ledger: %w", err)
+	}
+	defer unlock()
+
 	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open ledger for append: %w", err)
 	}
 	defer f.Close()
 
-	// Find the last record to get the prev hash
 	recs, _ := s.Load()
 	if len(recs) > 0 {
 		r.PrevHash = recs[len(recs)-1].Hash
@@ -75,9 +93,6 @@ func (s *Store) Append(r Record) error {
 	return nil
 }
 
-// Load reads every record from the ledger in file order.
-// Malformed lines are returned as an error listing the line number,
-// so callers can decide whether to skip or fail hard.
 func (s *Store) Load() ([]Record, error) {
 	f, err := os.Open(s.path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -90,7 +105,6 @@ func (s *Store) Load() ([]Record, error) {
 
 	var out []Record
 	sc := bufio.NewScanner(f)
-	// Bump the scanner buffer: a single record can be large for big commits.
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 
 	line := 0
@@ -112,8 +126,6 @@ func (s *Store) Load() ([]Record, error) {
 	return out, nil
 }
 
-// FindByCommit returns the most recent record for the given commit SHA,
-// or (zero, false) if none.
 func (s *Store) FindByCommit(sha string) (Record, bool, error) {
 	recs, err := s.Load()
 	if err != nil {
@@ -127,11 +139,15 @@ func (s *Store) FindByCommit(sha string) (Record, bool, error) {
 	return Record{}, false, nil
 }
 
-// Rewrite overwrites the entire ledger file with the provided records.
-// This is used for mutations like sign-offs, where appending isn't sufficient.
 func (s *Store) Rewrite(recs []Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	unlock, err := s.lockFile()
+	if err != nil {
+		return fmt.Errorf("lock ledger: %w", err)
+	}
+	defer unlock()
 
 	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {

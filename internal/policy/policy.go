@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const Path = ".auteur/policy.yaml"
+const Path = ".git/auteur/policy.yaml"
 
 type Rule struct {
 	Name                string   `yaml:"name"`

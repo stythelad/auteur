@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const Path = ".auteur/config.yaml"
+const Path = ".git/auteur/config.yaml"
 
 // Config is the on-disk Sentinel configuration.
 // v1 fields only; policy lives in a separate file later.
