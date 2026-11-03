@@ -199,3 +199,67 @@ func TestRebasePreservesAttribution(t *testing.T) {
 		t.Fatalf("confidence lost after rebase: %s", out)
 	}
 }
+
+func TestSignFailsIfTrustRootMissing(t *testing.T) {
+	r := newRepo(t)
+	r.write("a.txt", "x\n")
+	r.commitAll("base")
+	r.mustRun("init")
+
+	r.mustRun("wrap", "--agent", "claude-code", "--",
+		"sh", "-c", "echo 'y' >> a.txt")
+	r.commitAll("agent edit")
+
+	// Do NOT create .auteur/allowed_signers
+	out, err := r.run("sign")
+	if err == nil {
+		t.Fatalf("expected sign to fail without trust root, got: %s", out)
+	}
+	if !strings.Contains(out, "no trusted signers configured") {
+		t.Fatalf("expected missing trust root error, got: %s", out)
+	}
+}
+
+func TestSignFailsIfTrustRootEmpty(t *testing.T) {
+	r := newRepo(t)
+	r.write("a.txt", "x\n")
+	r.commitAll("base")
+	r.mustRun("init")
+
+	r.mustRun("wrap", "--agent", "claude-code", "--",
+		"sh", "-c", "echo 'y' >> a.txt")
+	r.commitAll("agent edit")
+
+	// Create an empty trust root
+	r.write(".auteur/allowed_signers", "trusted_signers: {}\n")
+
+	out, err := r.run("sign")
+	if err == nil {
+		t.Fatalf("expected sign to fail with empty trust root, got: %s", out)
+	}
+	if !strings.Contains(out, "no trusted signers configured") {
+		t.Fatalf("expected missing trust root error, got: %s", out)
+	}
+}
+
+func TestSignFailsIfKeyUntrusted(t *testing.T) {
+	r := newRepo(t)
+	r.write("a.txt", "x\n")
+	r.commitAll("base")
+	r.mustRun("init")
+
+	r.mustRun("wrap", "--agent", "claude-code", "--",
+		"sh", "-c", "echo 'y' >> a.txt")
+	r.commitAll("agent edit")
+
+	// Add a *fake* key to the trust root
+	r.write(".auteur/allowed_signers", "trusted_signers:\n  \"test\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKey\"\n")
+
+	out, err := r.run("sign")
+	if err == nil {
+		t.Fatalf("expected sign to fail with untrusted key, got: %s", out)
+	}
+	if !strings.Contains(out, "your public key is not in the trusted signers list") {
+		t.Fatalf("expected untrusted key error, got: %s", out)
+	}
+}

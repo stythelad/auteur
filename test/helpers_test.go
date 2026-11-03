@@ -33,6 +33,8 @@ func newRepo(t *testing.T) *repo {
 		"GIT_CONFIG_SYSTEM=/dev/null",
 	)
 	r.git("init", "-q", "-b", "main")
+	r.git("config", "user.name", "test")
+	r.git("config", "user.email", "test@example.com")
 	r.write(".gitignore", ".auteur/\n")
 	return r
 }

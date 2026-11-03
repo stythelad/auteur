@@ -37,7 +37,7 @@ func NewSignCmd() *cobra.Command {
 				return fmt.Errorf("git user.name is not set")
 			}
 
-			// Check if the key is trusted before signing
+			// Check if the key is trusted before signing (FAIL CLOSED)
 			pubKey, err := provenance.GetPublicKey(sshKey)
 			if err != nil {
 				return fmt.Errorf("read public key: %w", err)
@@ -46,11 +46,15 @@ func NewSignCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load trust root: %w", err)
 			}
-			if len(trustRoot) > 0 {
-				trustedKey, ok := trustRoot[identity]
-				if !ok || trustedKey != pubKey {
-					return fmt.Errorf("your public key is not in the trusted signers list. run `auteur trust add %s %s.pub` first", identity, sshKey)
-				}
+
+			// If the trust root is missing or empty, no one is authorized.
+			if len(trustRoot) == 0 {
+				return fmt.Errorf("no trusted signers configured. you must run `auteur trust add %s %s.pub` and commit `.auteur/allowed_signers` before signing", identity, sshKey)
+			}
+
+			trustedKey, ok := trustRoot[identity]
+			if !ok || trustedKey != pubKey {
+				return fmt.Errorf("your public key is not in the trusted signers list. run `auteur trust add %s %s.pub` first", identity, sshKey)
 			}
 
 			store := provenance.Open(root)
