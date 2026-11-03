@@ -37,6 +37,18 @@ by an agent, and with what confidence:
 The ledger is a plain text file (.auteur/provenance.jsonl) committed with
 your repo. No server, no database, no telemetry.
 
+### Zero-config agent capture
+
+You don't need to wrap your agents. `auteur init` installs native hooks for:
+
+- **Claude Code** (`.claude/settings.json`)
+- **Cursor** (`.cursor/hooks.json`)
+
+When they edit a file, the hook diffs it in the background and records exactly
+which lines changed (including the session ID and prompt hash).
+For other agents (Copilot, Codex, etc.), use `auteur wrap`.
+
+
 ## Install
 
     go install github.com/stythelad/auteur/cmd/auteur@latest
