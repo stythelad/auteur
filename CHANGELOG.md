@@ -1,6 +1,20 @@
 # Changelog
 
+## v0.4.0 — 2026-11-03
+
+### Security (Massive overhaul based on external audit)
+- **Committed trust root:** Signers are now managed in a committed `.auteur/allowed_signers` file via `auteur trust add`.
+- **Fail-closed verification:** If a signoff exists but no trusted signers are configured, `check` and `verify` fail.
+- **CI policy enforcement (`--ci-base`):** In CI, `auteur check --ci-base main` reads both the policy and trust root from the base branch. A PR can no longer modify its own policy or add its own signer.
+- **File-level provenance check:** CI now checks all *changed files* in protected paths. If an attacker bypasses the local hooks (e.g. `git commit --no-verify`), the file will have no record and CI will fail.
+- **Signature payload fix:** The signature hash no longer includes `PrevHash`, fixing out-of-order signing and allowing multi-reviewer approvals.
+- **Untrusted key block:** `auteur sign` refuses to sign if your key isn't in the trust root.
+- **Config error handling:** YAML typos in the policy or trust root now fail the build instead of silently disabling security.
+- **Corrupt trust file protection:** `auteur trust add` fails on a malformed YAML file instead of wiping the list.
+- **SSH-signed Git commits:** `auteur sign` now creates an empty Git commit signed with your SSH key (`git commit -S`), providing a secondary layer of verification.
+
 ## v0.3.0 — 2026-11-03
+
 
 ### Added
 - **Cryptographic identity verification:** `auteur sign` now uses local SSH keys to sign records. You cannot forge a signoff.
