@@ -119,3 +119,25 @@ func (s *Store) FindByCommit(sha string) (Record, bool, error) {
 	}
 	return Record{}, false, nil
 }
+
+// Rewrite overwrites the entire ledger file with the provided records.
+// This is used for mutations like sign-offs, where appending isn't sufficient.
+func (s *Store) Rewrite(recs []Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("open ledger for rewrite: %w", err)
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	enc.SetEscapeHTML(false)
+	for _, r := range recs {
+		if err := enc.Encode(r); err != nil {
+			return fmt.Errorf("encode record: %w", err)
+		}
+	}
+	return nil
+}

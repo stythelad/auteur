@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stythelad/auteur/internal/git"
-	"github.com/stythelad/auteur/internal/policy"
-	"github.com/stythelad/auteur/internal/provenance"
+	"github.com/pokhrelmishan/auteur/internal/git"
+	"github.com/pokhrelmishan/auteur/internal/policy"
+	"github.com/pokhrelmishan/auteur/internal/provenance"
 )
 
 func NewCheckCmd() *cobra.Command {
@@ -66,6 +66,7 @@ func NewCheckCmd() *cobra.Command {
 				Strict:      !noStrict,
 			})
 
+			failed := false
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -74,7 +75,12 @@ func NewCheckCmd() *cobra.Command {
 				}
 			} else {
 				for _, v := range vs {
-					fmt.Fprintf(cmd.OutOrStdout(), "VIOLATION  %s:%d-%d  [%s]\n", v.File, v.Start, v.End, v.Rule)
+					if v.IsAdvisory {
+						fmt.Fprintf(cmd.OutOrStdout(), "ADVISORY   %s:%d-%d  [%s]\n", v.File, v.Start, v.End, v.Rule)
+					} else {
+						fmt.Fprintf(cmd.OutOrStdout(), "VIOLATION  %s:%d-%d  [%s]\n", v.File, v.Start, v.End, v.Rule)
+						failed = true
+					}
 					fmt.Fprintf(cmd.OutOrStdout(), "  commit: %s\n", v.Commit)
 					fmt.Fprintf(cmd.OutOrStdout(), "  reason: %s\n", v.Reason)
 				}
@@ -83,7 +89,7 @@ func NewCheckCmd() *cobra.Command {
 				}
 			}
 
-			if len(vs) > 0 {
+			if !asJSON && failed {
 				os.Exit(1)
 			}
 			return nil
@@ -92,8 +98,8 @@ func NewCheckCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON")
 	cmd.Flags().StringVar(&since, "since", "", "only check commits not reachable from this ref")
 	cmd.Flags().StringVar(&prBase, "pr-base", "", "shorthand for --since origin/<branch>")
-	cmd.Flags().BoolVar(&noStrict, "no-strict", false, "do not fail on unknown-origin lines by default")
-	cmd.Flags().BoolVar(&allowMissingLedger, "allow-missing-ledger", false, "pass even if .auteur/provenance.jsonl is missing")
+	cmd.Flags().BoolVar(&noStrict, "no-strict", false, "do not fail on unknown-origin lines")
+	cmd.Flags().BoolVar(&allowMissingLedger, "allow-missing-ledger", false, "pass even if ledger is missing")
 	return cmd
 }
 

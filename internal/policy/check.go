@@ -3,28 +3,24 @@ package policy
 import (
 	"fmt"
 
-	"github.com/stythelad/auteur/internal/provenance"
+	"github.com/pokhrelmishan/auteur/internal/provenance"
 )
 
 type Violation struct {
-	Rule   string `json:"rule"`
-	File   string `json:"file"`
-	Start  int    `json:"start"`
-	End    int    `json:"end"`
-	Commit string `json:"commit"`
-	Reason string `json:"reason"`
+	Rule       string `json:"rule"`
+	File       string `json:"file"`
+	Start      int    `json:"start"`
+	End        int    `json:"end"`
+	Commit     string `json:"commit"`
+	Reason     string `json:"reason"`
+	IsAdvisory bool   `json:"is_advisory"`
 }
 
-// Options controls Check behavior.
 type Options struct {
-	// SkipCommits are commit SHAs to ignore (the --since base).
 	SkipCommits map[string]bool
-	// Strict makes unknown-origin lines fail in protected paths.
-	// Default true; callers pass false for --no-strict.
-	Strict bool
+	Strict      bool
 }
 
-// Check evaluates every record against every rule.
 func Check(records []provenance.Record, p Policy, opts Options) []Violation {
 	var out []Violation
 	for _, rec := range records {
@@ -45,21 +41,45 @@ func Check(records []provenance.Record, p Policy, opts Options) []Violation {
 	return out
 }
 
-// isAgentLike reports whether an origin counts as agent-authored for
-// policy purposes. Mixed contains agent code; treat it as agent.
 func isAgentLike(o provenance.Origin) bool {
 	return o == provenance.OriginAgent || o == provenance.OriginMixed
+}
+
+// confidenceValue maps confidence to a number for comparison.
+func confidenceValue(c provenance.Confidence) int {
+	switch c {
+	case provenance.ConfidenceHigh:
+		return 3
+	case provenance.ConfidenceMedium:
+		return 2
+	case provenance.ConfidenceLow:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// requiresFail decides if a violation should fail the build based on the
+// rule's min_confidence setting.
+func requiresFail(rule Rule, rec provenance.Record) bool {
+	if rule.MinConfidence == "" {
+		return true // default is hard fail
+	}
+	req := confidenceValue(provenance.Confidence(rule.MinConfidence))
+	actual := confidenceValue(rec.Confidence)
+	return actual >= req
 }
 
 func evaluate(rule Rule, lr provenance.LineRange, rec provenance.Record, opts Options) (Violation, bool) {
 	mk := func(reason string) (Violation, bool) {
 		return Violation{
-			Rule:   rule.Name,
-			File:   lr.File,
-			Start:  lr.Start,
-			End:    lr.End,
-			Commit: rec.Commit,
-			Reason: reason,
+			Rule:       rule.Name,
+			File:       lr.File,
+			Start:      lr.Start,
+			End:        lr.End,
+			Commit:     rec.Commit,
+			Reason:     reason,
+			IsAdvisory: !requiresFail(rule, rec),
 		}, true
 	}
 
@@ -82,18 +102,9 @@ func evaluate(rule Rule, lr provenance.LineRange, rec provenance.Record, opts Op
 		return mk("provenance is unknown in a path that requires it")
 	}
 
-	// Default-on strict mode: unknown-origin lines in any rule's paths
-	// fail unless the caller opts out.
 	if opts.Strict && lr.Origin == provenance.OriginUnknown {
 		return mk(fmt.Sprintf("unknown-origin lines flagged in strict mode (rule %s)", rule.Name))
 	}
 
 	return Violation{}, false
-}
-
-func Summarize(vs []Violation) string {
-	if len(vs) == 0 {
-		return "no violations"
-	}
-	return fmt.Sprintf("%d violation(s)", len(vs))
 }

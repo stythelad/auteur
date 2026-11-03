@@ -17,6 +17,9 @@ type Rule struct {
 	ForbidAgentAuthored bool     `yaml:"forbid_agent_authored,omitempty"`
 	RequireCIPassed     bool     `yaml:"require_ci_passed,omitempty"`
 	RequireProvenance   bool     `yaml:"require_provenance,omitempty"`
+	// MinConfidence is "high", "medium", or "low". Anything below this
+	// is treated as an advisory violation (warn, don't fail).
+	MinConfidence string `yaml:"min_confidence,omitempty"`
 }
 
 type Policy struct {
@@ -32,17 +35,18 @@ func Default() Policy {
 				Name:                "protected-paths-need-signoff",
 				Paths:               []string{"auth/**", "payments/**", "**/crypto/**"},
 				RequireHumanSignoff: true,
+				MinConfidence:       "high", // Only fail on wrap-level confidence
 			},
 			{
 				Name:                "no-agent-code-in-migrations",
 				Paths:               []string{"migrations/**", "**/migrations/**"},
 				ForbidAgentAuthored: true,
+				MinConfidence:       "high",
 			},
 		},
 	}
 }
 
-// Load reads and validates a policy file. Returns Default if missing.
 func Load(repoRoot string) (Policy, error) {
 	raw, err := os.ReadFile(repoRoot + "/" + Path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -63,7 +67,6 @@ func Load(repoRoot string) (Policy, error) {
 	return p, nil
 }
 
-// Validate checks structural invariants that YAML decoding can't catch.
 func (p Policy) Validate() error {
 	if p.Version != 1 {
 		return fmt.Errorf("unsupported policy version %d (want 1)", p.Version)
@@ -82,6 +85,9 @@ func (p Policy) Validate() error {
 		}
 		if !r.RequireHumanSignoff && !r.ForbidAgentAuthored && !r.RequireCIPassed && !r.RequireProvenance {
 			return fmt.Errorf("rule %q: at least one of require_human_signoff, forbid_agent_authored, require_ci_passed, require_provenance must be true", r.Name)
+		}
+		if r.MinConfidence != "" && r.MinConfidence != "high" && r.MinConfidence != "medium" && r.MinConfidence != "low" {
+			return fmt.Errorf("rule %q: min_confidence must be high, medium, or low", r.Name)
 		}
 	}
 	return nil
