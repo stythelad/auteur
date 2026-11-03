@@ -2,7 +2,6 @@ package provenance
 
 import "time"
 
-// Origin classifies who authored a line range.
 type Origin string
 
 const (
@@ -12,17 +11,14 @@ const (
 	OriginUnknown Origin = "unknown"
 )
 
-// Confidence expresses how sure we are about the attribution.
 type Confidence string
 
 const (
-	ConfidenceHigh   Confidence = "high"   // recorded by `sentinel wrap`
-	ConfidenceMedium Confidence = "medium" // inferred from commit trailers
-	ConfidenceLow    Confidence = "low"    // heuristic / best-effort
+	ConfidenceHigh   Confidence = "high"
+	ConfidenceMedium Confidence = "medium"
+	ConfidenceLow    Confidence = "low"
 )
 
-// LineRange is a contiguous span of lines in a file.
-// Start and End are 1-indexed and inclusive.
 type LineRange struct {
 	File   string `json:"file"`
 	Start  int    `json:"start"`
@@ -30,8 +26,6 @@ type LineRange struct {
 	Origin Origin `json:"origin"`
 }
 
-// Agent describes the agent that produced the change.
-// Empty on records where no agent was involved.
 type Agent struct {
 	Name        string `json:"name,omitempty"`
 	Model       string `json:"model,omitempty"`
@@ -40,19 +34,23 @@ type Agent struct {
 	ToolVersion string `json:"tool_version,omitempty"`
 }
 
-// Author is the human who made the commit.
 type Author struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
 }
 
-// Review captures post-hoc human signoff and CI state.
-type Review struct {
-	HumanSignoff []string `json:"human_signoff,omitempty"`
-	CIPassed     bool     `json:"ci_passed,omitempty"`
+type Signoff struct {
+	Identity  string `json:"identity"`
+	PublicKey string `json:"public_key"`
+	Signature string `json:"signature"`
+	Timestamp string `json:"timestamp"`
 }
 
-// Record is one entry in the provenance ledger — one per commit.
+type Review struct {
+	Signoffs []Signoff `json:"signoffs,omitempty"`
+	CIPassed bool      `json:"ci_passed,omitempty"`
+}
+
 type Record struct {
 	Commit     string      `json:"commit"`
 	Parent     string      `json:"parent,omitempty"`

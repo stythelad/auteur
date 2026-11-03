@@ -9,7 +9,7 @@ import (
 func rec(commit string, signoff []string, ci bool, lines ...provenance.LineRange) provenance.Record {
 	return provenance.Record{
 		Commit: commit,
-		Review: provenance.Review{HumanSignoff: signoff, CIPassed: ci},
+		Review: provenance.Review{Signoffs: make([]provenance.Signoff, len(signoff)), CIPassed: ci},
 		Lines:  lines,
 	}
 }

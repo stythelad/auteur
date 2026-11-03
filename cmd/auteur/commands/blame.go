@@ -112,8 +112,12 @@ func printAttribution(w interface{ Write([]byte) (int, error) }, file string, li
 	fmt.Fprintf(w, "  commit:  %s  (%s)\n", shortSHA(r.Commit), r.Timestamp.Format("2006-01-02"))
 	fmt.Fprintf(w, "  range:   %d-%d\n", a.Range.Start, a.Range.End)
 	fmt.Fprintf(w, "  origin:  %s   [confidence: %s]\n", a.Range.Origin, r.Confidence)
-	if len(r.Review.HumanSignoff) > 0 {
-		fmt.Fprintf(w, "  review:  signoff by %s\n", strings.Join(r.Review.HumanSignoff, ", "))
+	if len(r.Review.Signoffs) > 0 {
+		var signers []string
+		for _, s := range r.Review.Signoffs {
+			signers = append(signers, s.Identity)
+		}
+		fmt.Fprintf(w, "  review:  cryptographically signed by %s\n", strings.Join(signers, ", "))
 	}
 }
 

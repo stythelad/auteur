@@ -117,10 +117,14 @@ To approve a commit, use the CLI:
 
     auteur sign <commit-sha>
 
-This creates a new (empty) Git commit containing an `Auteur-Signoff` trailer.
-Auteur extracts the author identity from that commit and writes it into the
-`human_signoff` array for the target commit's record in the ledger. Because the
-signoff is tied to a real Git commit, you cannot forge someone else's identity.
+This cryptographically signs the commit's provenance record using your local
+SSH key (default: `~/.ssh/id_ed25519`). The ledger stores your identity, your
+public key, and the cryptographic signature. 
+
+Because the signature is tied to your SSH key, you cannot forge someone else's
+identity. When CI runs `auteur check`, it verifies the hash chain **and** every
+cryptographic signature, ensuring that a human actually approved that specific
+code.
 You then commit the updated `.auteur/provenance.jsonl` file to your branch.
 The `post-commit` hook does not do this automatically.
 

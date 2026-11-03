@@ -89,7 +89,7 @@ func evaluate(rule Rule, lr provenance.LineRange, rec provenance.Record, opts Op
 		return mk("agent-authored lines are forbidden in this path")
 	}
 	if rule.RequireHumanSignoff && agentLike {
-		if len(rec.Review.HumanSignoff) == 0 {
+		if len(rec.Review.Signoffs) == 0 {
 			return mk("agent-authored lines require human signoff; none recorded")
 		}
 	}
