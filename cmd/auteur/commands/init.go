@@ -50,6 +50,7 @@ func NewInitCmd() *cobra.Command {
 
 			policyPath := root + "/" + policy.Path
 			if _, pErr := os.Stat(policyPath); os.IsNotExist(pErr) {
+				os.MkdirAll(filepath.Dir(policyPath), 0o755)
 				if sErr := policy.Save(root, policy.Default()); sErr != nil {
 					return sErr
 				}

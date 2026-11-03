@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/stythelad/auteur/internal/git"
+
 	"gopkg.in/yaml.v3"
 )
 
-const Path = ".git/auteur/policy.yaml"
+const Path = ".auteur/policy.yaml"
 
 type Rule struct {
 	Name                string   `yaml:"name"`
@@ -35,12 +37,14 @@ func Default() Policy {
 				Name:                "protected-paths-need-signoff",
 				Paths:               []string{"auth/**", "payments/**", "**/crypto/**"},
 				RequireHumanSignoff: true,
-				MinConfidence:       "high", // Only fail on wrap-level confidence
+				RequireProvenance:   true,
+				MinConfidence:       "high",
 			},
 			{
 				Name:                "no-agent-code-in-migrations",
 				Paths:               []string{"migrations/**", "**/migrations/**"},
 				ForbidAgentAuthored: true,
+				RequireProvenance:   true,
 				MinConfidence:       "high",
 			},
 		},
@@ -102,4 +106,22 @@ func Save(repoRoot string, p Policy) error {
 		return fmt.Errorf("write policy: %w", err)
 	}
 	return nil
+}
+
+// LoadFromGit reads the policy from a specific git ref (e.g., origin/main).
+func LoadFromGit(repoRoot, ref string) (Policy, error) {
+	raw, err := git.Run(repoRoot, "show", ref+":"+Path)
+	if err != nil {
+		return Policy{}, fmt.Errorf("git show %s:%s: %w", ref, Path, err)
+	}
+	var p Policy
+	dec := yaml.NewDecoder(bytesReader([]byte(raw)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&p); err != nil {
+		return Policy{}, fmt.Errorf("parse policy from %s: %w", ref, err)
+	}
+	if err := p.Validate(); err != nil {
+		return Policy{}, fmt.Errorf("invalid policy from %s: %w", ref, err)
+	}
+	return p, nil
 }

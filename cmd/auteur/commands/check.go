@@ -35,6 +35,8 @@ func NewCheckCmd() *cobra.Command {
 			base := since
 			if prBase != "" {
 				base = "origin/" + prBase
+			} else if ciBase != "" {
+				base = ciBase
 			}
 
 			skipSet := map[string]bool{}
@@ -95,15 +97,61 @@ func NewCheckCmd() *cobra.Command {
 				}
 			}
 
-			pol, err := policy.Load(root)
-			if err != nil {
-				return err
+			var pol policy.Policy
+			if ciBase != "" {
+				pol, err = policy.LoadFromGit(root, ciBase)
+				if err != nil {
+					return fmt.Errorf("load policy from CI base: %w", err)
+				}
+			} else {
+				pol, err = policy.Load(root)
+				if err != nil {
+					return err
+				}
 			}
 
 			vs := policy.Check(recs, pol, policy.Options{
 				SkipCommits: skipSet,
 				Strict:      !noStrict,
 			})
+
+			// Check for files changed in the PR that have no provenance record.
+			if base != "" {
+				changedFilesOut, err := git.Run(root, "diff", "--name-only", base+"..HEAD")
+				if err == nil {
+					changedFiles := splitLines(changedFilesOut)
+					for _, file := range changedFiles {
+						hasRecord := false
+						for _, r := range recs {
+							for _, lr := range r.Lines {
+								if lr.File == file {
+									hasRecord = true
+									break
+								}
+							}
+							if hasRecord {
+								break
+							}
+						}
+						if !hasRecord {
+							for _, rule := range pol.Rules {
+								if policy.AnyMatch(rule.Paths, file) {
+									vs = append(vs, policy.Violation{
+										Rule:       rule.Name,
+										File:       file,
+										Start:      0,
+										End:        0,
+										Commit:     "UNKNOWN",
+										Reason:     "file was changed in this PR but has no provenance record (unknown origin)",
+										IsAdvisory: false,
+									})
+									break
+								}
+							}
+						}
+					}
+				}
+			}
 
 			failed := false
 			if asJSON {

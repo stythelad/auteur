@@ -121,7 +121,7 @@ func TestCheckFailsOnMalformedPolicy(t *testing.T) {
 	r.commitAll("initial")
 	r.mustRun("init")
 
-	policyPath := filepath.Join(r.dir, ".git", "auteur", "policy.yaml")
+	policyPath := filepath.Join(r.dir, ".auteur", "policy.yaml")
 	if err := os.WriteFile(policyPath, []byte("version: 1\nrules:\n  - name: r\n    paths: [\"a/**\"]\n    require_human_singoff: true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
