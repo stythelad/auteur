@@ -242,6 +242,20 @@ If someone manually edits the JSONL file to change a signer's identity or line
 ranges, `auteur verify` will instantly fail with a `hash mismatch` and an
 `invalid signature` error.
 
+### Managing the trust root
+
+You must explicitly authorize the SSH keys that are allowed to sign off on AI code.
+This prevents an attacker from generating a throwaway key and claiming to be you.
+
+    auteur trust add "Alice" ~/.ssh/id_ed25519.pub
+    auteur trust add "Bob" ~/.ssh/id_ed25519.pub
+    auteur trust list
+    auteur trust remove "Bob"
+
+This manages the `.auteur/allowed_signers` file. You must commit this file to
+your repository. We recommend protecting it with a `CODEOWNERS` rule so that
+only maintainers can approve changes to it.
+
 ## Command reference
 
 | Command | Purpose |
