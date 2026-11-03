@@ -59,7 +59,7 @@ func checkRel(realRoot, realTarget string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("path %q is on a different volume or invalid: %w", realTarget, err)
 	}
-	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", fmt.Errorf("path %q is outside the repository", realTarget)
 	}
 	return realTarget, nil

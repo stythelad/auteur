@@ -27,7 +27,10 @@ func secureReadFile(root, target string) ([]byte, error) {
 	}
 
 	rel, err := filepath.Rel(realRoot, realTarget)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil {
+		return nil, fmt.Errorf("path rel: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return nil, fmt.Errorf("target outside root")
 	}
 
