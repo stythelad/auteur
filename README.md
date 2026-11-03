@@ -126,8 +126,17 @@ require_provenance. At least one must be set per rule.
 
 Path matching supports *, ?, and ** (multi-segment).
 
-`auteur check --since <ref>` only checks commits not reachable from `<ref>`,
-which is what you want in CI.
+When running in CI, use `--ci-base` to read both the policy and the trust root
+from the base branch, and to check all changed files in protected paths:
+
+    auteur check --ci-base origin/main
+
+This ensures that:
+1. The policy is read from `main`, not the PR (so a PR cannot empty the policy).
+2. The trust root is read from `main`, not the PR (so a PR cannot add its own signer).
+3. Every changed file in a protected path must have a provenance record. If a file
+   was modified but has no record, the build fails (so AI code cannot be committed
+   without attribution).
 
 ## Approving agent code
 
