@@ -263,3 +263,38 @@ func TestSignFailsIfKeyUntrusted(t *testing.T) {
 		t.Fatalf("expected untrusted key error, got: %s", out)
 	}
 }
+
+func TestCheckLineLevelProvenance(t *testing.T) {
+	r := newRepo(t)
+	r.mustRun("init")
+	r.write("auth/login.py", "line 1\n")
+	// Force-add the policy to main (since .auteur/ is gitignored)
+	r.git("add", "-f", ".auteur/policy.yaml")
+	r.commitAll("base and policy")
+
+	r.git("checkout", "-q", "-b", "feature")
+
+	// AI edit: adds line 2
+	r.mustRun("wrap", "--agent", "claude-code", "--",
+		"sh", "-c", "echo 'line 2' >> auth/login.py")
+	r.commitAll("ai edit")
+
+	// Human edit: adds line 3 (no provenance)
+	r.appendTo("auth/login.py", "line 3\n")
+	r.commitAll("human edit")
+
+	// Check against main
+	out, err := r.run("check", "--ci-base", "main")
+	if err == nil {
+		t.Fatalf("expected check to fail, got: %s", out)
+	}
+
+	// The AI's line 2 should be flagged (needs signoff)
+	if !strings.Contains(out, "auth/login.py:2-2") {
+		t.Fatalf("expected violation on line 2, got: %s", out)
+	}
+	// The human's line 3 should be flagged (no record)
+	if !strings.Contains(out, "auth/login.py:3-3") {
+		t.Fatalf("expected violation on line 3, got: %s", out)
+	}
+}

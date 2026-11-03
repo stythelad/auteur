@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -81,7 +83,7 @@ func NewCheckCmd() *cobra.Command {
 					return fmt.Errorf("cryptographic verification failed: %w", err)
 				}
 
-				// Filter out untrusted signoffs before policy evaluation.
+				// Filter out untrusted signoffs.
 				for i := range recs {
 					if len(trustRoot) == 0 {
 						recs[i].Review.Signoffs = nil
@@ -115,41 +117,75 @@ func NewCheckCmd() *cobra.Command {
 				Strict:      !noStrict,
 			})
 
-			// Check for files changed in the PR that have no provenance record.
+			// Line-level validation against the actual diff.
 			if base != "" {
-				changedFilesOut, err := git.Run(root, "diff", "--name-only", base+"..HEAD")
+				diffOut, err := git.Run(root, "diff", "-U0", base+"..HEAD")
 				if err == nil {
-					changedFiles := splitLines(changedFilesOut)
-					for _, file := range changedFiles {
-						hasRecord := false
-						for _, r := range recs {
-							for _, lr := range r.Lines {
-								if lr.File == file {
-									hasRecord = true
-									break
-								}
-							}
-							if hasRecord {
-								break
-							}
-						}
-						if !hasRecord {
+					changedLines := git.AddedLines(diffOut)
+
+					// Map changed lines to files. For simplicity, we re-parse the diff
+					// to associate line ranges with the correct file.
+					fileLines := parseDiffFiles(diffOut)
+
+					for file, lines := range fileLines {
+						for _, lineRange := range lines {
 							for _, rule := range pol.Rules {
 								if policy.AnyMatch(rule.Paths, file) {
-									vs = append(vs, policy.Violation{
-										Rule:       rule.Name,
-										File:       file,
-										Start:      0,
-										End:        0,
-										Commit:     "UNKNOWN",
-										Reason:     "file was changed in this PR but has no provenance record (unknown origin)",
-										IsAdvisory: false,
-									})
+									// Check EVERY line in the range
+									var uncoveredLines []int
+									for lineNum := lineRange[0]; lineNum <= lineRange[1]; lineNum++ {
+										covered := false
+										for _, r := range recs {
+											for _, lr := range r.Lines {
+												if lr.File == file && lineNum >= lr.Start && lineNum <= lr.End {
+													covered = true
+													break
+												}
+											}
+											if covered {
+												break
+											}
+										}
+										if !covered {
+											uncoveredLines = append(uncoveredLines, lineNum)
+										}
+									}
+
+									// Group uncovered lines into ranges for the output
+									if len(uncoveredLines) > 0 {
+										start := uncoveredLines[0]
+										prev := start
+										for _, l := range uncoveredLines[1:] {
+											if l != prev+1 {
+												vs = append(vs, policy.Violation{
+													Rule:       rule.Name,
+													File:       file,
+													Start:      start,
+													End:        prev,
+													Commit:     "UNKNOWN",
+													Reason:     "line changed in this PR but has no provenance record",
+													IsAdvisory: false,
+												})
+												start = l
+											}
+											prev = l
+										}
+										vs = append(vs, policy.Violation{
+											Rule:       rule.Name,
+											File:       file,
+											Start:      start,
+											End:        prev,
+											Commit:     "UNKNOWN",
+											Reason:     "line changed in this PR but has no provenance record",
+											IsAdvisory: false,
+										})
+									}
 									break
 								}
 							}
 						}
 					}
+					_ = changedLines
 				}
 			}
 
@@ -187,8 +223,61 @@ func NewCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&prBase, "pr-base", "", "shorthand for --since origin/<branch>")
 	cmd.Flags().BoolVar(&noStrict, "no-strict", false, "do not fail on unknown-origin lines")
 	cmd.Flags().BoolVar(&allowMissingLedger, "allow-missing-ledger", false, "pass even if ledger is missing")
-	cmd.Flags().StringVar(&ciBase, "ci-base", "", "Read trust root from this git ref (e.g., origin/main) for CI")
+	cmd.Flags().StringVar(&ciBase, "ci-base", "", "Read policy and trust root from this git ref for CI")
 	return cmd
+}
+
+// parseDiffFiles extracts file -> []([start, end]) from a unified diff.
+func parseDiffFiles(diff string) map[string][][2]int {
+	out := map[string][][2]int{}
+	lines := strings.Split(diff, "\n")
+
+	var currentFile string
+	var lineNum int
+	hunkRegex := regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "+++ b/") {
+			currentFile = line[6:]
+			continue
+		}
+		if strings.HasPrefix(line, "+++ ") {
+			currentFile = "" // /dev/null (deleted file)
+			continue
+		}
+
+		if strings.HasPrefix(line, "@@ ") {
+			matches := hunkRegex.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				fmt.Sscanf(matches[1], "%d", &lineNum)
+				if lineNum == 0 {
+					lineNum = 1
+				}
+			}
+			continue
+		}
+
+		if currentFile == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			// Add to ranges, merging adjacent lines
+			ranges := out[currentFile]
+			if len(ranges) > 0 && ranges[len(ranges)-1][1]+1 == lineNum {
+				ranges[len(ranges)-1][1] = lineNum
+			} else {
+				ranges = append(ranges, [2]int{lineNum, lineNum})
+			}
+			out[currentFile] = ranges
+			lineNum++
+		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			// Deleted lines don't increment the new file line count
+		} else if strings.HasPrefix(line, " ") {
+			lineNum++
+		}
+	}
+	return out
 }
 
 func fileExists(p string) bool {
@@ -198,34 +287,11 @@ func fileExists(p string) bool {
 
 func splitLines(s string) []string {
 	var out []string
-	for _, line := range splitAny(s, '\n') {
-		line = trimSpace(line)
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
 		if line != "" {
 			out = append(out, line)
 		}
 	}
 	return out
-}
-
-func splitAny(s string, sep rune) []string {
-	var out []string
-	start := 0
-	for i, r := range s {
-		if r == sep {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	out = append(out, s[start:])
-	return out
-}
-
-func trimSpace(s string) string {
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t' || s[0] == '\r') {
-		s = s[1:]
-	}
-	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t' || s[len(s)-1] == '\r') {
-		s = s[:len(s)-1]
-	}
-	return s
 }
