@@ -78,6 +78,17 @@ func NewInitCmd() *cobra.Command {
 			if err := os.MkdirAll(claudeDir, 0o755); err == nil {
 				claudeSettings := `{
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "auteur hook-agent-pre claude-code"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",

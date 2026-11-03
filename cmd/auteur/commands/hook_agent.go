@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -36,7 +37,6 @@ func sanitizePrompt(cfg config.Config, prompt string) string {
 	return prompt
 }
 
-// isIgnored checks if a file is likely generated, binary, or huge.
 func isIgnored(rel string) bool {
 	ignoredDirs := []string{"node_modules/", "dist/", "build/", "vendor/", ".next/", "target/"}
 	for _, d := range ignoredDirs {
@@ -44,7 +44,6 @@ func isIgnored(rel string) bool {
 			return true
 		}
 	}
-	// Check extension
 	binExts := []string{".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".tar", ".gz", ".exe", ".dll", ".so", ".dylib", ".lock", "-lock.json", "-lock.yaml"}
 	for _, e := range binExts {
 		if strings.HasSuffix(rel, e) {
@@ -122,20 +121,36 @@ func NewHookAgentCmd() *cobra.Command {
 				return nil
 			}
 
-			if isIgnored(rel) {
-				// For generated files, just attribute the whole file
-				ranges := [][2]int{{1, 999999}}
-				saveDirty(root, agentName, rel, ranges, sessionID, prompt)
+			// The snapshot directory holds the "before" state of files the AI has touched
+			snapDir := filepath.Join(root, ".git", "auteur", "snapshots")
+			os.MkdirAll(snapDir, 0o755)
+			snapPath := filepath.Join(snapDir, strings.ReplaceAll(rel, "/", "_"))
+
+			var beforeContent []byte
+			if data, err := os.ReadFile(snapPath); err == nil {
+				beforeContent = data
+			} else {
+				// No pre-tool snapshot. This means the PreToolUse hook didn't fire.
+				// Fall back to the full file (safe, conservative).
+				saveDirty(root, agentName, rel, [][2]int{{1, 999999}}, sessionID, prompt)
 				return nil
 			}
 
-			diff, _ := git.Run(root, "diff", "-U0", "HEAD", "--", rel)
-			if diff == "" {
-				diff, _ = git.Run(root, "diff", "-U0", "--no-index", "/dev/null", rel)
+			afterContent, err := os.ReadFile(filePath)
+			if err != nil {
+				// File might have been deleted
+				return nil
 			}
-			ranges := git.AddedLines(diff)
+
+			// Save the new snapshot for next time
+			os.WriteFile(snapPath, afterContent, 0o644)
+
+			// Compute the diff between before and after
+			diffOut := runDiff(beforeContent, afterContent)
+			ranges := git.AddedLines(diffOut)
 			if len(ranges) == 0 {
-				ranges = [][2]int{{1, 999999}}
+				// No actual changes (e.g. AI read the file)
+				return nil
 			}
 
 			saveDirty(root, agentName, rel, ranges, sessionID, prompt)
@@ -143,6 +158,24 @@ func NewHookAgentCmd() *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+// runDiff calls `git diff --no-index` on two temp files.
+func runDiff(before, after []byte) string {
+	tmpDir, _ := os.MkdirTemp("", "auteur-diff-*")
+	defer os.RemoveAll(tmpDir)
+
+	oldFile := filepath.Join(tmpDir, "old")
+	newFile := filepath.Join(tmpDir, "new")
+	os.WriteFile(oldFile, before, 0644)
+	os.WriteFile(newFile, after, 0644)
+
+	cmd := exec.Command("git", "diff", "--no-index", "-U0", oldFile, newFile)
+	out, _ := cmd.CombinedOutput()
+
+	// git diff --no-index exits 1 if there are differences, which is normal
+	// We just return the diff output
+	return string(out)
 }
 
 func saveDirty(root, agent, rel string, ranges [][2]int, session, prompt string) {

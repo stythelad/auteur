@@ -130,6 +130,10 @@ records to the ledger.`,
 				}
 			}
 
+			// Clear snapshots after commit, since the next AI edit starts fresh
+			snapDir := filepath.Join(root, ".git", "auteur", "snapshots")
+			os.RemoveAll(snapDir)
+
 			n, err := provenance.ResolvePending(root, head, ts, files)
 			if err != nil {
 				return err
