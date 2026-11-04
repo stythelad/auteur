@@ -101,7 +101,25 @@ func Push(repoRoot, remote string) error {
 	if remote == "" {
 		remote = "origin"
 	}
+
+	// First attempt: normal push.
 	_, err := git.Run(repoRoot, "push", remote, "refs/notes/"+NotesRef)
+	if err == nil {
+		return nil
+	}
+
+	// If it failed, try to fetch+merge and retry once with --force.
+	if strings.Contains(err.Error(), "non-fast-forward") || strings.Contains(err.Error(), "rejected") {
+		if mergeErr := FetchAndMerge(repoRoot, remote); mergeErr != nil {
+			return fmt.Errorf("push failed and merge also failed: push=%v merge=%w", err, mergeErr)
+		}
+		_, retryErr := git.Run(repoRoot, "push", "--force", remote, "refs/notes/"+NotesRef)
+		if retryErr != nil {
+			return fmt.Errorf("push failed after merge: %w", retryErr)
+		}
+		return nil
+	}
+
 	return err
 }
 
