@@ -1,4 +1,16 @@
-# Changelog
+# Changelog 
+## v0.6.0 — 2026-11-04
+
+### Added
+- **Git Notes Transport:** Provenance records are now mirrored to `refs/notes/auteur` so they can be shared across clones and CI.
+- `auteur push` and `auteur fetch` commands to sync the notes ref.
+- `auteur resolve-squash` command to preserve attribution across GitHub squash-merges.
+- The GitHub Action automatically runs `auteur fetch` before `auteur check`.
+- End-to-end integration test proving a developer can push notes and CI can fetch them.
+
+### Changed
+- `check`, `verify`, and `blame` now read from the notes ref (falling back to the local JSONL cache).
+- `blame` now filters records to commits reachable from HEAD, fixing flakiness after rebases.
 
 ## v0.5.4 — 2026-11-03
 
@@ -110,3 +122,4 @@
 ## v0.1.0 — 2026-10-31
 
 Initial release. Core loop: init, wrap, blame, check, scan-history.
+
