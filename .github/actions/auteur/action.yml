@@ -25,6 +25,12 @@ runs:
         AUTEUR_VERSION: ${{ inputs.auteur-version }}
       run: go install github.com/stythelad/auteur/cmd/auteur@${AUTEUR_VERSION}
     
+    - name: Fetch provenance notes
+      shell: bash
+      run: |
+        # Notes may not exist yet (first ever run); treat failure as non-fatal.
+        auteur fetch --remote origin || echo "No provenance notes found on origin (this is normal for new repos)."
+
     - name: Run Auteur Check
       shell: bash
       env:
