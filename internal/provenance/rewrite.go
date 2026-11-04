@@ -14,14 +14,14 @@ import (
 // record still answers queries against the pre-rewrite commit.
 //
 // Returns the number of records copied.
-func RewriteRecords(repoRoot string, pairs map[string]string) (int, error) {
+func RewriteRecords(repoRoot string, pairs map[string]string) (int, []Record, error) {
 	if len(pairs) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	store := Open(repoRoot)
 	recs, err := store.Load()
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	// Group existing records by their commit SHA.
@@ -30,7 +30,7 @@ func RewriteRecords(repoRoot string, pairs map[string]string) (int, error) {
 		bySHA[r.Commit] = append(bySHA[r.Commit], r)
 	}
 
-	copied := 0
+	var copied []Record
 	for oldSHA, newSHA := range pairs {
 		if oldSHA == newSHA {
 			continue
@@ -39,12 +39,12 @@ func RewriteRecords(repoRoot string, pairs map[string]string) (int, error) {
 			c := r
 			c.Commit = newSHA
 			if err := store.Append(c); err != nil {
-				return copied, fmt.Errorf("append rewritten record: %w", err)
+				return len(copied), copied, fmt.Errorf("append rewritten record: %w", err)
 			}
-			copied++
+			copied = append(copied, c)
 		}
 	}
-	return copied, nil
+	return len(copied), copied, nil
 }
 
 // ParseRewritePairs parses "old new\nold new\n..." input, as delivered by

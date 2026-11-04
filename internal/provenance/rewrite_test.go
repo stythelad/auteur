@@ -27,7 +27,7 @@ func TestRewriteRecords_CopiesToNewSHA(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n, err := RewriteRecords(dir, map[string]string{"old": "new"})
+	n, _, err := RewriteRecords(dir, map[string]string{"old": "new"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestRewriteRecords_SameSHANoOp(t *testing.T) {
 	r.Commit = "same"
 	_ = s.Append(r)
 
-	n, err := RewriteRecords(dir, map[string]string{"same": "same"})
+	n, _, err := RewriteRecords(dir, map[string]string{"same": "same"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestRewriteRecords_SameSHANoOp(t *testing.T) {
 
 func TestRewriteRecords_MissingSourceNoOp(t *testing.T) {
 	_, dir := newTempStore(t)
-	n, err := RewriteRecords(dir, map[string]string{"nonexistent": "newsha"})
+	n, _, err := RewriteRecords(dir, map[string]string{"nonexistent": "newsha"})
 	if err != nil {
 		t.Fatal(err)
 	}

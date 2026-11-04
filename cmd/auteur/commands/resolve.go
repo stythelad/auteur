@@ -102,6 +102,9 @@ records to the ledger.`,
 							Lines:      lines,
 						}
 						provenance.Open(root).Append(rec)
+						if err := notes.WriteRecord(root, head, rec); err != nil {
+							fmt.Fprintf(os.Stderr, "auteur: failed to write note: %v\n", err)
+						}
 					}
 					os.Remove(dirtyList) // Clear after processing
 				}

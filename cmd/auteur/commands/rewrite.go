@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stythelad/auteur/internal/git"
+	"github.com/stythelad/auteur/internal/notes"
 	"github.com/stythelad/auteur/internal/provenance"
 )
 
@@ -47,9 +48,14 @@ Or, from a post-rewrite-style stdin stream:
 				pairs = map[string]string{args[0]: args[1]}
 			}
 
-			n, err := provenance.RewriteRecords(root, pairs)
+			n, recs, err := provenance.RewriteRecords(root, pairs)
 			if err != nil {
 				return err
+			}
+			for _, rec := range recs {
+				if err := notes.WriteRecord(root, rec.Commit, rec); err != nil {
+					return fmt.Errorf("write note: %w", err)
+				}
 			}
 			if verbose {
 				fmt.Fprintf(cmd.OutOrStdout(), "rewrote %d record(s) across %d pair(s)\n", n, len(pairs))
