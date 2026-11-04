@@ -60,50 +60,49 @@ func NewCheckCmd() *cobra.Command {
 				}
 			}
 
-			store := provenance.Open(root)
-			ledgerMissing := !fileExists(store.Path())
-			recs, err := store.Load()
+			recs, err := loadRecords(root)
 			if err != nil {
 				return err
 			}
-			if ledgerMissing && !allowMissingLedger {
-				return errors.New("provenance ledger not found; run `auteur init` and `auteur scan-history`, or pass --allow-missing-ledger")
+			if len(recs) == 0 && !allowMissingLedger {
+				return errors.New("no provenance records found in notes or local cache; run `auteur init` and `auteur scan-history`, or pass --allow-missing-ledger")
 			}
 
-			if !allowMissingLedger {
-				var trustRoot map[string]string
-				if ciBase != "" {
-					trustRoot, err = config.LoadTrustRootFromGit(root, ciBase)
-					if err != nil {
-						return fmt.Errorf("load trust root from CI base: %w", err)
-					}
+			// Trust root and cryptographic verification always run, even when
+			// --allow-missing-ledger is passed. That flag only skips the
+			// "no records" error, not the security checks.
+			var trustRoot map[string]string
+			if ciBase != "" {
+				trustRoot, err = config.LoadTrustRootFromGit(root, ciBase)
+				if err != nil {
+					return fmt.Errorf("load trust root from CI base: %w", err)
+				}
+			} else {
+				trustRoot, err = config.LoadTrustRoot(root)
+				if err != nil {
+					return fmt.Errorf("load trust root: %w", err)
+				}
+			}
+
+			if err := provenance.VerifyLedger(recs); err != nil {
+				return fmt.Errorf("security check failed: %w", err)
+			}
+			if err := provenance.VerifySignoffs(recs, trustRoot); err != nil {
+				return fmt.Errorf("cryptographic verification failed: %w", err)
+			}
+
+			// Filter out untrusted signoffs.
+			for i := range recs {
+				if len(trustRoot) == 0 {
+					recs[i].Review.Signoffs = nil
 				} else {
-					trustRoot, err = config.LoadTrustRoot(root)
-					if err != nil {
-						return fmt.Errorf("load trust root: %w", err)
-					}
-				}
-
-				if err := provenance.VerifyLedger(recs); err != nil {
-					return fmt.Errorf("security check failed: %w", err)
-				}
-				if err := provenance.VerifySignoffs(recs, trustRoot); err != nil {
-					return fmt.Errorf("cryptographic verification failed: %w", err)
-				}
-
-				// Filter out untrusted signoffs.
-				for i := range recs {
-					if len(trustRoot) == 0 {
-						recs[i].Review.Signoffs = nil
-					} else {
-						var trusted []provenance.Signoff
-						for _, s := range recs[i].Review.Signoffs {
-							if key, ok := trustRoot[s.Identity]; ok && key == s.PublicKey {
-								trusted = append(trusted, s)
-							}
+					var trusted []provenance.Signoff
+					for _, s := range recs[i].Review.Signoffs {
+						if key, ok := trustRoot[s.Identity]; ok && key == s.PublicKey {
+							trusted = append(trusted, s)
 						}
-						recs[i].Review.Signoffs = trusted
 					}
+					recs[i].Review.Signoffs = trusted
 				}
 			}
 

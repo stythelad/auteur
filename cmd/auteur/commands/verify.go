@@ -25,8 +25,7 @@ func NewVerifyCmd() *cobra.Command {
 				return err
 			}
 
-			store := provenance.Open(root)
-			recs, err := store.Load()
+			recs, err := loadRecords(root)
 			if err != nil {
 				return err
 			}

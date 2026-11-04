@@ -91,7 +91,7 @@ func TestCheckPassesOnCleanRepo(t *testing.T) {
 	r.commitAll("initial")
 	r.mustRun("init")
 
-	out, err := r.run("check")
+	out, err := r.run("check", "--allow-missing-ledger")
 	if err != nil {
 		t.Fatalf("expected pass on clean repo, got: %v\n%s", err, out)
 	}
@@ -109,8 +109,8 @@ func TestCheckFailsOnMissingLedger(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected check to fail on missing ledger, got: %s", out)
 	}
-	if !strings.Contains(out, "ledger not found") {
-		t.Fatalf("expected ledger-not-found error: %s", out)
+	if !strings.Contains(out, "no provenance records found") {
+		t.Fatalf("expected no-records error: %s", out)
 	}
 
 	if _, err := r.run("check", "--allow-missing-ledger"); err != nil {
@@ -311,13 +311,15 @@ func TestCIRejectsMissingBaseTrustRoot(t *testing.T) {
 	r := newRepo(t)
 	r.mustRun("init")
 	r.write("auth/login.py", "base\n")
+	// Force-add the policy to main so the test reaches the trust root check
+	r.git("add", "-f", ".auteur/policy.yaml")
 	r.commitAll("base")
 
 	r.git("checkout", "-q", "-b", "feature")
 	r.write("auth/login.py", "base\nevil\n")
 	r.commitAll("attack")
 
-	out, err := r.run("check", "--ci-base", "main")
+	out, err := r.run("check", "--ci-base", "main", "--allow-missing-ledger")
 	if err == nil {
 		t.Fatalf("expected error, got: %s", out)
 	}
