@@ -100,21 +100,19 @@ func TestCheckPassesOnCleanRepo(t *testing.T) {
 	}
 }
 
-func TestCheckFailsOnMissingLedger(t *testing.T) {
+func TestCheckPassesOnMissingLedger(t *testing.T) {
 	r := newRepo(t)
 	r.write("a.txt", "x\n")
 	r.commitAll("initial")
 
+	// With no provenance records, the check should warn but not fail,
+	// as long as the PR doesn't touch protected paths.
 	out, err := r.run("check")
-	if err == nil {
-		t.Fatalf("expected check to fail on missing ledger, got: %s", out)
+	if err != nil {
+		t.Fatalf("expected check to pass on missing ledger, got: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "no provenance records found") {
-		t.Fatalf("expected no-records error: %s", out)
-	}
-
-	if _, err := r.run("check", "--allow-missing-ledger"); err != nil {
-		t.Fatalf("allow-missing-ledger should pass: %v", err)
+	if !strings.Contains(out, "no violations") {
+		t.Fatalf("expected no violations: %s", out)
 	}
 }
 

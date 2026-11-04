@@ -52,18 +52,30 @@ It supports two modes:
 						}
 					}
 				}
+				// If --from-message was explicitly requested but there are no trailers,
+				// do nothing. Do not fall through to auto-detect.
+				if len(shas) == 0 {
+					fmt.Fprintln(cmd.OutOrStdout(), "No Auteur-Origin-SHA trailers found in HEAD; skipping.")
+					return nil
+				}
 			}
 
 			if len(shas) == 0 {
-				// Auto-detect: find notes that don't match any current commit
+				// Auto-detect: find notes whose target commit no longer exists in this repo.
 				allNotes, err := notes.ListAllRecords(root)
 				if err != nil {
 					return err
 				}
-				// Check which note SHAs still exist as commits
+				seen := map[string]bool{}
 				for _, rec := range allNotes {
-					exists, _ := git.Run(root, "cat-file", "-e", rec.Commit+"^{commit}")
-					if exists == "" {
+					if seen[rec.Commit] {
+						continue
+					}
+					seen[rec.Commit] = true
+					// `cat-file -e` returns an error if the object does not exist.
+					// We only treat the note as orphaned if that error is non-nil.
+					_, catErr := git.Run(root, "cat-file", "-e", rec.Commit+"^{commit}")
+					if catErr != nil {
 						shas = append(shas, rec.Commit)
 					}
 				}

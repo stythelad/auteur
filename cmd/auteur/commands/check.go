@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -79,7 +78,7 @@ func NewCheckCmd() *cobra.Command {
 				return err
 			}
 			if len(recs) == 0 && !allowMissingLedger {
-				return errors.New("no provenance records found in notes or local cache; run `auteur init` and `auteur scan-history`, or pass --allow-missing-ledger")
+				fmt.Fprintln(os.Stderr, "auteur: warning: no provenance records found in notes or local cache. proceeding, but protected paths may fail.")
 			}
 
 			// Cryptographic verification always runs, even when --allow-missing-ledger

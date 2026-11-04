@@ -58,8 +58,6 @@ func NewBlameCmd() *cobra.Command {
 			}
 
 			// Filter to records whose commits are reachable from HEAD.
-			// This prevents stale records (from rebased-away commits) from
-			// shadowing the current attribution.
 			reachableOut, reachErr := git.Run(root, "rev-list", "HEAD")
 			if reachErr == nil {
 				reachable := map[string]bool{}
@@ -80,7 +78,50 @@ func NewBlameCmd() *cobra.Command {
 				}
 			}
 
-			att := provenance.LookupLine(recs, file, line)
+			var att provenance.Attribution
+
+			// 1. Primary: use git blame to find the exact commit that last touched this line.
+			// This handles line drift (insertions/deletions above the line) flawlessly.
+			blameOut, blameErr := git.Run(root, "blame", "-L", fmt.Sprintf("%d,%d", line, line), "--porcelain", "--", file)
+			if blameErr == nil && blameOut != "" {
+				firstLine := strings.SplitN(blameOut, "\n", 2)[0]
+				parts := strings.Fields(firstLine)
+				if len(parts) >= 1 {
+					commitSHA := parts[0]
+
+					// Look for a record matching this commit SHA.
+					for _, r := range recs {
+						if r.Commit == commitSHA {
+							// Verify the record actually covers this file.
+							for _, lr := range r.Lines {
+								if lr.File == file {
+									att = provenance.Attribution{
+										Found:  true,
+										Record: r,
+										Range:  lr,
+									}
+									break
+								}
+							}
+							if att.Found {
+								break
+							}
+						}
+					}
+				}
+			}
+
+			// 2. Fallback: only if git blame itself failed (e.g., file is untracked).
+			// If git blame succeeded but found no record, the commit genuinely has no
+			// provenance record (meaning a human wrote it). We do NOT fall back to
+			// line-range matching, because line ranges get stale.
+			if !att.Found && blameErr != nil {
+				att = provenance.LookupLine(recs, file, line)
+			}
+
+			if !att.Found && att.Note == "" {
+				att.Note = "no ledger entry covers this line"
+			}
 
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
