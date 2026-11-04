@@ -1,0 +1,17 @@
+version: 1
+rules:
+    - name: protected-paths-need-signoff
+      paths:
+        - auth/**
+        - payments/**
+        - '**/crypto/**'
+      require_human_signoff: true
+      require_provenance: true
+      min_confidence: high
+    - name: no-agent-code-in-migrations
+      paths:
+        - migrations/**
+        - '**/migrations/**'
+      forbid_agent_authored: true
+      require_provenance: true
+      min_confidence: high
