@@ -1,349 +1,400 @@
 # Auteur
 
-**Provenance ledger for AI-authored code.**
+**Provenance tracking and policy checks for AI-assisted code.**
 
 ![Auteur demo](docs/demo.gif)
 
-git blame tells you *who* wrote a line. Auteur tells you *whether it was
-a human or a model* — and which model, session, and prompt hash produced it.
+Git records who committed a change. Auteur records additional context about
+which lines were attributed to an AI agent, which tool or model was involved,
+and whether a human reviewer signed off.
 
-    $ auteur blame auth/login.py:42
-    auth/login.py:42
-      author:  claude-code (claude-opus-5.5)
-      session: sess_abc123
-      commit:  62e291c  (2026-10-31)
-      range:   40-55
-      origin:  agent   [confidence: high]
+```text
+$ auteur blame auth/login.py:42
+auth/login.py:42
+  author:  claude-code (claude-opus-5.5)
+  session: sess_abc123
+  commit:  62e291c  (2026-10-31)
+  range:   40-55
+  origin:  agent   [confidence: high]
+```
 
-As AI writes more of our code, "who touched this line" stops being enough.
-When a bug ships at 3am, you need to know whether the fix came from a human
-or a model, which model, and whether anyone reviewed it. Auteur records
-that alongside your git history.
+Auteur is designed to make provenance easier to inspect and policy-check. It
+does not independently prove that a model produced particular code: attribution
+depends on the capture mechanism, the integrity of the repository and notes,
+and the trust placed in signing keys and contributors. Treat provenance as
+auditable evidence, not a substitute for code review.
 
-*The name: an "auteur" is the author whose personal creative vision shapes
-a work. Here it's the model, the session, and the person who reviewed the
-result.*
+## What Auteur records
 
-## How it works
+Auteur associates provenance records with Git commits. Records can include:
 
-Auteur keeps a ledger of which line ranges in which commits were authored
-by an agent, and with what confidence:
+- File paths and changed line ranges.
+- Origin classification, such as agent-authored.
+- Agent name, model, and session identifier when available.
+- Confidence level.
+- Human signoffs and cryptographic signature metadata.
 
-- high   — recorded by `auteur wrap` (the agent ran under Auteur)
-- medium — inferred from Co-authored-by trailers in the commit message
-- low    — reserved for future heuristics
-- unknown — never assume human; absence of a record means unknown
+Confidence levels:
 
-The ledger is a plain text file (.git/auteur/provenance.jsonl) committed with
-your repo. No server, no database, no telemetry.
-
-### Zero-config agent capture
-
-You don't need to wrap your agents. `auteur init` installs native hooks for:
-
-- **Claude Code** (`.claude/settings.json`) — **Precise (line-level)**
-- **Cursor** (`.cursor/hooks.json`) — **Coarse (file-level)**
-
-**Claude Code** supports both pre-edit and post-edit hooks. Auteur uses the
-pre-edit hook to snapshot the file *before* the AI touches it. When the AI
-finishes, it diffs the before/after state. This means if you have uncommitted
-human changes, they are never attributed to the AI.
-
-**Cursor** currently only exposes a post-edit hook (`afterFileEdit`). Because
-Auteur cannot see the file state *before* Cursor edits it, it falls back to
-attributing the **entire file** to the agent (with a terminal warning). This is
-safe (it fails closed), but it may over-attribute human changes. For precise
-Cursor attribution, use `auteur wrap`.
-
-For other agents (Copilot, Codex, etc.), use `auteur wrap`.
-
+| Level | Meaning |
+|---|---|
+| `high` | Captured directly by Auteur while an agent command or supported editor hook runs. |
+| `medium` | Inferred from recognized `Co-authored-by` commit trailers by `auteur scan-history`. |
+| `low` | Reserved for lower-confidence heuristics. |
+| Unknown | No matching provenance record was found. Absence of a record is not proof that a human wrote the code. |
 
 ## Install
 
-    go install github.com/stythelad/auteur/cmd/auteur@latest
+Auteur requires **Go 1.26** to build from source.
 
-Or build from source:
+Install the v0.6.5 release:
 
-    git clone git@github.com:stythelad/auteur.git
-    cd auteur
-    make install
+```sh
+go install github.com/stythelad/auteur/cmd/auteur@v0.6.5
+```
 
-## Quickstart
+Or build from a checkout:
 
-In any git repository:
+```sh
+git clone https://github.com/stythelad/auteur.git
+cd auteur
+go build -o auteur ./cmd/auteur
+```
 
-    auteur init
+Make sure the installed `auteur` binary is on your `PATH`.
 
-That creates .git/auteur/config.yaml, .git/auteur/policy.yaml, an empty
-.git/auteur/provenance.jsonl, and installs a post-commit hook.
+## Quick start
 
-### Record agent work
+From inside an existing Git repository:
 
-**Automatic (Claude Code):**
-If you use Claude Code, you don't need to wrap it. `auteur init` automatically installs a `.claude/settings.json` hook. When Claude edits a file, the hook quietly records it. When you commit, Auteur attributes those files to Claude at `high` confidence.
+```sh
+auteur init
+```
 
-**Automatic (Cursor):**
-Cursor is also supported out of the box. `auteur init` installs a `.cursor/hooks.json` file. Any file edited by Cursor's Agent or Composer is automatically attributed when you commit.
+Initialization creates or initializes:
 
-**Manual (Copilot, Codex, Any Other Agent):**
-For tools that don't have local lifecycle hooks, wrap the invocation. This captures the exact line ranges changed during the session:
+| Path | Purpose | Shared with Git? |
+|---|---|---|
+| `.git/auteur/provenance.jsonl` | Local provenance ledger/cache | No |
+| `.git/auteur/config.yaml` | Local Auteur settings | No |
+| `.auteur/policy.yaml` | Repository policy | Yes; commit it |
+| `.git/hooks/post-commit` | Resolves pending records after commits | Local |
+| `.git/hooks/post-rewrite` | Preserves records across rewritten commits | Local |
+| `.claude/settings.json` | Claude Code hook configuration, merged if present | Usually commit if you share project settings |
+| `.cursor/hooks.json` | Cursor hook configuration, merged if present | Usually commit if you share project settings |
 
-    auteur wrap --agent copilot -- copilot-cli "fix the login bug"
-    git add .
-    git commit -m "fix login bug"
-    auteur blame auth/login.py:42
+The trusted signer list is stored separately in `.auteur/allowed_signers`.
+Add it with `auteur trust add` and commit it to the repository.
 
-The post-commit hook resolves the pending record to your commit's SHA.
+## Capture agent changes
 
-### Bootstrap existing history
+### Claude Code and Cursor hooks
 
-Already have agent commits? Scan for Co-authored-by trailers:
+`auteur init` merges Auteur hooks into the supported editor configuration
+files. Claude Code supports pre-edit and post-edit capture, allowing Auteur
+to compare the file before and after an edit. Cursor's available post-edit
+hook does not provide the same before-edit snapshot; Cursor attribution can
+therefore be coarser and may include other edits already present in the file.
 
-    auteur scan-history --dry-run
-    auteur scan-history
+Review the generated hook configuration and test it with your installed
+versions of the editors. Hook availability and event behavior can change
+between editor releases.
 
-### Gate CI on policy
+### Wrap another agent or command
 
-    auteur check --pr-base main
+For tools without a supported lifecycle hook, run the command through
+`auteur wrap`:
 
-Exits non-zero on violations.
+```sh
+auteur wrap --agent codex --model gpt-example -- codex "fix the login bug"
+git add .
+git commit -m "fix login bug"
+```
 
-## Policy
+Auteur compares repository snapshots before and after the wrapped command and
+stores a pending record. The post-commit hook resolves pending records to the
+new commit. You can also inspect pending work:
 
-.git/auteur/policy.yaml supports four rule types:
+```sh
+auteur pending list
+auteur pending show <uuid>
+```
 
-    version: 1
-    rules:
-      - name: protected-paths-need-signoff
-        paths: ["auth/**", "payments/**", "**/crypto/**"]
-        require_human_signoff: true
+If a pending record is stale, remove old pending records with:
 
-      - name: no-agent-code-in-migrations
-        paths: ["migrations/**", "**/migrations/**"]
-        forbid_agent_authored: true
+```sh
+auteur pending gc --older-than 7d
+```
 
-      - name: ci-must-have-passed
-        paths: ["**"]
-        require_ci_passed: true
+### Import existing history
 
-      - name: provenance-required-in-sensitive-areas
-        paths: ["auth/**", "payments/**"]
-        require_provenance: true
+Scan commit messages for recognized agent `Co-authored-by` trailers:
 
-Rule fields: require_human_signoff, forbid_agent_authored, require_ci_passed,
-require_provenance. At least one must be set per rule.
+```sh
+auteur scan-history --dry-run
+auteur scan-history
+```
 
-Path matching supports *, ?, and ** (multi-segment).
+History scanning infers attribution and writes records with **medium**
+confidence. It is not equivalent to capture at the time the code was edited.
 
-When running in CI, use `--ci-base` to read both the policy and the trust root
-from the base branch, and to check all changed files in protected paths:
+## Shared provenance with Git notes
 
-    auteur check --ci-base origin/main
+Auteur mirrors provenance records to the Git notes ref:
 
-This ensures that:
-1. The policy is read from `main`, not the PR (so a PR cannot empty the policy).
-2. The trust root is read from `main`, not the PR (so a PR cannot add its own signer).
-3. Every changed file in a protected path must have a provenance record. If a file
-   was modified but has no record, the build fails (so AI code cannot be committed
-   without attribution).
+```text
+refs/notes/auteur
+```
 
-## Approving agent code
+Git notes can be transferred between clones independently of ordinary commit
+history. Use the commands below to synchronize them:
 
-By default, `auteur check` fails closed. If an agent touches a protected path
-(e.g. `auth/`), the build fails until a human signs off on that specific commit.
+```sh
+auteur fetch
+auteur push
+```
 
-To approve a commit, use the CLI:
+The GitHub Action described below fetches the remote Auteur notes before
+running its policy check. If you use a different CI system, fetch the notes
+before invoking `auteur check`.
 
-    auteur sign <commit-sha>
+Notes are associated with commit object IDs. If a hosting platform squash-merges
+a pull request and replaces the original commits, use `auteur resolve-squash`
+to copy attribution to the resulting squash commit. The command supports
+explicit original commit IDs and `Auteur-Origin-SHA:` trailers; see:
 
-This cryptographically signs the commit's provenance record using your local
-SSH key (default: `~/.ssh/id_ed25519`). The ledger stores your identity, your
-public key, and the cryptographic signature. 
+```sh
+auteur resolve-squash --help
+```
 
-Auteur verifies that the signature matches the key used to create it. However, to
-prevent someone from generating a throwaway SSH key and claiming to be a
-maintainer, you **must** configure a list of trusted signers in your config.
+For rebases and amended commits, Auteur installs a post-rewrite hook and also
+provides:
 
-Add the allowed identities and their public SSH keys to `.git/auteur/config.yaml`:
+```sh
+auteur rewrite --help
+```
 
-    trusted_signers:
-      "Alice": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
-      "Bob": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+Keep notes synchronized with the remote so that other clones and CI can see
+the records they need.
 
-When `auteur check` or `auteur verify` runs, it will reject any signature
-where the public key does not match the trusted key for that identity in the
-config. The signoff is saved directly to the local `.git/auteur/provenance.jsonl` file.
+## Configure policy
 
-### Tamper-evident ledger
+The repository policy lives in `.auteur/policy.yaml`. `auteur init` creates a
+default policy if one does not already exist.
 
-To prevent developers from bypassing the policy by just hand-editing the JSONL
-file to add their own name, the ledger is **tamper-evident**. Every record
-includes a SHA-256 hash of the previous record. If the file is modified outside
-of `auteur`, the hash chain breaks, and `auteur check` will fail instantly with
-a `ledger tampering detected` error.
+Example:
 
-## Privacy controls
+```yaml
+version: 1
+rules:
+  - name: protected-paths-need-signoff
+    paths:
+      - "auth/**"
+      - "payments/**"
+      - "**/crypto/**"
+    require_human_signoff: true
+    require_provenance: true
+    min_confidence: high
 
-Because agent hooks capture prompt text from your IDE, Auteur includes strict
-privacy controls. By default, it automatically redacts API keys and tokens,
-and truncates prompts to 200 characters.
+  - name: no-agent-code-in-migrations
+    paths:
+      - "migrations/**"
+      - "**/migrations/**"
+    forbid_agent_authored: true
+    require_provenance: true
+    min_confidence: high
 
-You can configure this in `.git/auteur/config.yaml`:
+  - name: require-ci-attestation
+    paths:
+      - "auth/**"
+    require_ci_passed: true
+```
 
-    privacy:
-      capture_prompt: true      # Set to false to only store a SHA-256 hash of the prompt
-      prompt_max_length: 200    # Truncate long prompts
-      redact_secrets: true      # Automatically mask API keys/tokens (sk-..., ghp_..., etc.)
-      capture_session_id: true  # Store the IDE session ID
+Supported rule fields:
 
-If you are in a highly regulated environment (e.g. SOC2, HIPAA), set
-`capture_prompt: false`. Auteur will still track exactly which lines were
-written by the AI, but it will never store the prompt text.
+- `paths`: path patterns to which the rule applies.
+- `require_human_signoff`: require a trusted human signoff.
+- `forbid_agent_authored`: disallow agent-origin records.
+- `require_ci_passed`: require the CI-passed condition.
+- `require_provenance`: require provenance evidence.
+- `min_confidence`: `high`, `medium`, or `low`.
 
-## CI integration
+Each rule must set at least one of the four boolean requirements. Path patterns
+support `*`, `?`, and `**` for multi-segment matching.
 
-We provide a composite GitHub Action that handles installation and execution.
+Run a local check:
 
-    name: Auteur
-    on: [pull_request]
-    jobs:
-      check:
-        runs-on: ubuntu-latest
-        steps:
-          - uses: actions/checkout@v4
-            with:
-              fetch-depth: 0
-          - uses: stythelad/auteur@v0.5.4
-            with:
-              base-ref: ${{ github.base_ref }}
-              auteur-version: 'v0.5.4' # Optional: defaults to the release tag
+```sh
+auteur check
+```
 
-`fetch-depth: 0` is required so Auteur can see the base branch history.
+For pull-request checks, compare against the base branch:
 
-## Cryptographic auditing
+```sh
+git fetch origin
+auteur check --ci-base origin/main
+```
 
-Because Auteur makes security claims, you can explicitly audit the ledger:
+The `--ci-base` option reads the policy and trusted signer list from the
+specified base ref, rather than trusting versions introduced by the pull
+request. It also rejects changes to the committed trust-root file in the PR.
 
-    auteur verify
+Other useful options:
 
-This runs a deep audit and outputs the trust guarantees:
+```sh
+auteur check --since origin/main
+auteur check --pr-base main
+auteur check --json
+auteur check --no-strict
+```
 
-    === Auteur Ledger Audit ===
-    Total records: 1
+Review the check output and CI exit status together. As with any provenance
+system, policy results are only as reliable as the records and validation
+available to that version of Auteur.
 
-    [1] Integrity (SHA-256 Hash Chain)
-      Status: PASSED
-      The ledger has not been tampered with.
+## Trusted signers and approvals
 
-    [2] Authenticity (SSH Signatures)
-      Status: PASSED
-      All cryptographic signatures are valid.
+The committed trust root is:
 
-    [3] Signoff Roster
-      61d85ee: Alice
+```text
+.auteur/allowed_signers
+```
 
-    === Trust Model ===
-    - The hash chain proves this ledger has not been accidentally corrupted or hand-edited.
-    - The SSH signatures prove which local keys authorised which exact code changes.
-    - Note: This tool assumes the signing keys are not compromised. It does not replace CODEOWNERS or human review.
+Add a signer's public SSH key:
 
-If someone manually edits the JSONL file to change a signer's identity or line
-ranges, `auteur verify` will instantly fail with a `hash mismatch` and an
-`invalid signature` error.
+```sh
+auteur trust add "Alice" ~/.ssh/id_ed25519.pub
+auteur trust list
+```
 
-### Managing the trust root
+Commit `.auteur/allowed_signers` and protect changes to it with your normal
+repository controls, such as CODEOWNERS and required reviews. Remove a signer
+with `auteur trust remove "Alice"`.
 
-You must explicitly authorize the SSH keys that are allowed to sign off on AI code.
-This prevents an attacker from generating a throwaway key and claiming to be you.
+To sign off on a provenance record:
 
-    auteur trust add "Alice" ~/.ssh/id_ed25519.pub
-    auteur trust add "Bob" ~/.ssh/id_ed25519.pub
-    auteur trust list
-    auteur trust remove "Bob"
+```sh
+auteur sign <commit-sha>
+```
 
-This manages the `.auteur/allowed_signers` file. You must commit this file to
-your repository. We recommend protecting it with a `CODEOWNERS` rule so that
-only maintainers can approve changes to it.
+You can specify a private key with `--ssh-key`. The default is
+`~/.ssh/id_ed25519`. The signer identity is taken from `git config user.name`,
+and the corresponding public key must be present in the trust root.
+
+The sign command also creates an empty SSH-signed Git commit containing an
+Auteur signoff trailer. Configure Git SSH commit signing (including
+`gpg.format=ssh` and `user.signingkey`) before using this command.
+
+Audit the locally available provenance records with:
+
+```sh
+auteur verify
+```
+
+A successful audit is not a guarantee against compromised signing keys,
+malicious trusted contributors, or defects in the capture and verification
+implementation. Keep normal code review and branch protections in place.
+
+## Privacy
+
+Auteur's local settings are stored in `.git/auteur/config.yaml`. The default
+configuration does **not** capture prompt text. Prompt capture is opt-in.
+Secret redaction is enabled by default, and session IDs can be captured.
+
+Example settings:
+
+```yaml
+version: 1
+privacy:
+  capture_prompt: false
+  prompt_max_length: 200
+  redact_secrets: true
+  capture_session_id: true
+```
+
+Review your local configuration and your organization's data-handling
+requirements before enabling prompt capture. Redaction is a safeguard, not a
+guarantee that all sensitive information will be detected.
+
+## GitHub Actions
+
+The repository provides a composite action at the repository root. Example
+workflow:
+
+```yaml
+name: Auteur
+on:
+  pull_request:
+
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: stythelad/auteur@v0.6.5
+        with:
+          base-ref: ${{ github.base_ref }}
+          auteur-version: v0.6.5
+```
+
+The action:
+
+1. Sets up Go 1.26.
+2. Installs the requested Auteur version.
+3. Attempts to fetch `refs/notes/auteur` from `origin`.
+4. Runs `auteur check --ci-base origin/<base-ref>`.
+
+Use a full checkout so the base ref and relevant commit history are available.
+The action's `base-ref` input is required; `auteur-version` defaults to
+`v0.6.5`.
+
+The action treats a failed notes fetch as non-fatal and continues to the check.
+Ensure your repository actually publishes the notes ref and that the workflow
+has the Git permissions and remote configuration needed to fetch it. A missing
+notes ref is not evidence that all changed code has valid provenance.
 
 ## Command reference
 
 | Command | Purpose |
 |---|---|
-| `auteur init` | Create ledger, config, policy, install post-commit hook |
-| `auteur sign <sha>` | Cryptographically sign off on an agent commit |
-| `auteur wrap -- <cmd>` | Run a command and record its line changes as pending |
-| `auteur blame <file>:<line>` | Show provenance for a single line |
-| `auteur check` | Evaluate policy against the ledger |
-| `auteur scan-history` | Bootstrap records from commit trailers |
-| `auteur pending list` | Show unresolved pending records |
-| `auteur pending show <uuid>` | Inspect a single pending record |
-| `auteur pending gc` | Prune stale pending records |
+| `auteur init` | Initialize local state and install Git/editor hooks |
+| `auteur wrap -- <command>` | Capture changes made by a wrapped command |
+| `auteur blame <file>:<line>` | Show provenance for a line |
+| `auteur check` | Evaluate provenance policy |
+| `auteur sign [commit-sha]` | Sign off on a commit's provenance |
+| `auteur verify` | Audit local provenance integrity and signatures |
+| `auteur trust add/list/remove` | Manage trusted signers |
+| `auteur scan-history` | Infer records from commit trailers |
+| `auteur push` / `auteur fetch` | Synchronize Git notes |
+| `auteur resolve-squash` | Copy provenance to a squash-merge commit |
+| `auteur rewrite` | Preserve records across rewritten commits |
+| `auteur pending list/show/gc` | Inspect or prune pending records |
 | `auteur resolve-pending` | Resolve pending records to HEAD |
-| `auteur rewrite <old> <new>` | Copy attribution to rewritten SHAs (manual) |
 
-## Design notes
+Run `auteur <command> --help` for flags and detailed usage.
 
-**Why a ledger in `.git/auteur/`?**
-Storing the ledger in the working tree caused merge conflicts and broke
-`git worktree`. By moving it to `.git/auteur/`, it is shared safely across
-all worktrees and never accidentally committed. The ledger is a JSONL file
-that is append-only and crash-safe.
+## Current status
 
-**Why JSONL, not a single JSON array?**
-Append-only writes are O(1) and crash-safe: a partial write corrupts at
-most the last line.
-
-**Why git stash create for snapshots?**
-stash create is O(tracked files) and doesn't touch disk beyond one commit
-object. File copying is O(repo size).
-
-**Why confidence tiers?**
-A tool that claims perfect attribution is lying. medium from trailers is
-real signal, but it's not the same as a wrap-recorded high.
-
-## Roadmap
-
-- [x] Ledger store, init
-- [x] blame with reverse-walk lookup
-- [x] wrap with diff extraction
-- [x] Post-commit hook to resolve pending records
-- [x] Policy engine (check)
-- [x] Trailer-based history scan
-- [x] Rebase survival for pending records (v0.2)
-- [ ] Editor integration (VS Code, Neovim)
-- [ ] Agent-native SDK
-- [ ] blame --format=oneline for scripting
-
-## Status
-
-v0.3 — usable, opinionated, early. Breaking changes possible before v1.
-
-## Prior art
-
-Auteur is not the only line-level AI attribution tool. Worth knowing about:
-
-- git-ai — git notes based, agent hooks, rebase survival
-- GitIntelAI — Rust CLI, zero-setup trailer detection, cost tracking
-- Agent Blame — git notes, browser extensions
-- agentdiff — ed25519-signed records
-
-Auteur differentiates on: explicit confidence tiers, a policy engine for
-CI gating, rebase/amend survival, and a both-ways approach (wrap for high
-confidence, trailers for medium).
-
-## Known footguns
-
-**Stale binary + silent hooks.** The git hooks installed by `auteur init`
-call `auteur` from `$PATH`. After upgrading Auteur, rebuild and re-install
-the binary; otherwise hooks silently no-op (`|| true`). If attribution
-isn't appearing after a commit, run `auteur resolve-pending --verbose`
-manually and check `which auteur` points at the new build.
-
-
-## License
-
-MIT. See LICENSE.
+Auteur is pre-1.0 software. Interfaces and record formats may change before
+1.0. The current release is v0.6.5. Review the changelog for release-specific
+changes and known limitations before adopting it in a security-critical
+workflow.
 
 ## Contributing
 
-See CONTRIBUTING.md. Issues and PRs welcome.
+Issues and pull requests are welcome. Run the test suite and static checks
+before submitting changes:
+
+```sh
+go test ./...
+go vet ./...
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
