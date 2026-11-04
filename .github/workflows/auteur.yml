@@ -15,4 +15,4 @@ jobs:
         uses: stythelad/auteur@main
         with:
           base-ref: ${{ github.base_ref }}
-          auteur-version: 'v0.5.4'
+          auteur-version: 'main'
