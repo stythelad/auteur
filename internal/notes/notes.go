@@ -11,15 +11,27 @@ import (
 
 const NotesRef = "auteur"
 
-// WriteRecord attaches a provenance Record to a specific commit SHA as a Git note.
+// WriteRecord appends a provenance Record to the Git note for a commit SHA.
 func WriteRecord(repoRoot, sha string, r provenance.Record) error {
-	b, err := json.Marshal(r)
+	existing, found, err := ReadRecords(repoRoot, sha)
 	if err != nil {
-		return fmt.Errorf("marshal record: %w", err)
+		return err
 	}
 
-	// git notes add -f -m <json> <sha>
-	// We use -f to overwrite if a note already exists (e.g., for updates)
+	var records []provenance.Record
+	if found {
+		records = existing
+	}
+
+	// Avoid duplicates (same commit, lines, and origin)
+	// For simplicity, we just append. The merge strategy will dedup later.
+	records = append(records, r)
+
+	b, err := json.Marshal(records)
+	if err != nil {
+		return fmt.Errorf("marshal records: %w", err)
+	}
+
 	out, err := git.Run(repoRoot, "notes", "--ref="+NotesRef, "add", "-f", "-m", string(b), sha)
 	if err != nil {
 		return fmt.Errorf("git notes add: %w\n%s", err, out)
@@ -27,27 +39,33 @@ func WriteRecord(repoRoot, sha string, r provenance.Record) error {
 	return nil
 }
 
-// ReadRecord retrieves the provenance Record for a specific commit SHA.
-func ReadRecord(repoRoot, sha string) (provenance.Record, bool, error) {
+// ReadRecords retrieves all provenance Records for a specific commit SHA.
+func ReadRecords(repoRoot, sha string) ([]provenance.Record, bool, error) {
 	out, err := git.Run(repoRoot, "notes", "--ref="+NotesRef, "show", sha)
 	if err != nil {
-		// If the commit has no note, git returns an error. We treat this as "not found".
 		if strings.Contains(err.Error(), "no note found") {
-			return provenance.Record{}, false, nil
+			return nil, false, nil
 		}
-		return provenance.Record{}, false, err
+		return nil, false, err
 	}
 
-	var r provenance.Record
-	if err := json.Unmarshal([]byte(out), &r); err != nil {
-		return provenance.Record{}, false, fmt.Errorf("unmarshal note: %w", err)
+	// Try parsing as array first
+	var records []provenance.Record
+	if err := json.Unmarshal([]byte(out), &records); err == nil {
+		return records, true, nil
 	}
-	return r, true, nil
+
+	// Fallback to single object (backward compatibility)
+	var single provenance.Record
+	if err := json.Unmarshal([]byte(out), &single); err == nil {
+		return []provenance.Record{single}, true, nil
+	}
+
+	return nil, false, fmt.Errorf("failed to parse note: %s", out)
 }
 
 // ListAllRecords returns all provenance records in the repo.
 func ListAllRecords(repoRoot string) ([]provenance.Record, error) {
-	// git notes list returns lines of "<note-sha> <object-sha>"
 	out, err := git.Run(repoRoot, "notes", "--ref="+NotesRef, "list")
 	if err != nil {
 		if strings.Contains(err.Error(), "no notes found") {
@@ -56,7 +74,7 @@ func ListAllRecords(repoRoot string) ([]provenance.Record, error) {
 		return nil, err
 	}
 
-	var records []provenance.Record
+	var allRecords []provenance.Record
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -66,20 +84,19 @@ func ListAllRecords(repoRoot string) ([]provenance.Record, error) {
 		if len(parts) != 2 {
 			continue
 		}
-		objSha := parts[1] // The commit SHA the note is attached to
+		objSha := parts[1]
 
-		r, found, err := ReadRecord(repoRoot, objSha)
+		recs, found, err := ReadRecords(repoRoot, objSha)
 		if err != nil {
 			return nil, err
 		}
 		if found {
-			records = append(records, r)
+			allRecords = append(allRecords, recs...)
 		}
 	}
-	return records, nil
+	return allRecords, nil
 }
 
-// Push pushes the notes ref to the remote.
 func Push(repoRoot, remote string) error {
 	if remote == "" {
 		remote = "origin"
@@ -88,7 +105,6 @@ func Push(repoRoot, remote string) error {
 	return err
 }
 
-// Fetch fetches the notes ref from the remote.
 func Fetch(repoRoot, remote string) error {
 	if remote == "" {
 		remote = "origin"

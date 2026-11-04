@@ -40,10 +40,10 @@ func NewFetchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := notes.Fetch(root, remote); err != nil {
+			if err := notes.FetchAndMerge(root, remote); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Fetched refs/notes/%s from %s\n", notes.NotesRef, remote)
+			fmt.Fprintf(cmd.OutOrStdout(), "Fetched and merged refs/notes/%s from %s\n", notes.NotesRef, remote)
 			return nil
 		},
 	}

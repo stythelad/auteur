@@ -8,6 +8,7 @@ import (
 
 	"github.com/stythelad/auteur/internal/config"
 	"github.com/stythelad/auteur/internal/git"
+	"github.com/stythelad/auteur/internal/notes"
 	"github.com/stythelad/auteur/internal/provenance"
 )
 
@@ -63,23 +64,29 @@ func NewSignCmd() *cobra.Command {
 				return err
 			}
 
-			found := false
+			var signedRecs []provenance.Record
 			for i := range recs {
 				if recs[i].Commit == fullTargetSHA {
 					if err := provenance.SignRecord(&recs[i], identity, sshKey); err != nil {
 						return fmt.Errorf("failed to sign record: %w", err)
 					}
-					found = true
-					break
+					signedRecs = append(signedRecs, recs[i])
 				}
 			}
 
-			if !found {
+			if len(signedRecs) == 0 {
 				return fmt.Errorf("no provenance record found for commit %s", fullTargetSHA)
 			}
 
 			if err := store.Rewrite(recs); err != nil {
 				return fmt.Errorf("failed to write ledger: %w", err)
+			}
+
+			// Write the updated (signed) records to notes so CI can see them.
+			for _, rec := range signedRecs {
+				if err := notes.WriteRecord(root, rec.Commit, rec); err != nil {
+					return fmt.Errorf("failed to write note for %s: %w", rec.Commit[:7], err)
+				}
 			}
 
 			// Create an empty Git commit with the signoff trailer, SSH-signed.

@@ -76,19 +76,21 @@ It supports two modes:
 
 			copied := 0
 			for _, origSHA := range shas {
-				rec, found, err := notes.ReadRecord(root, origSHA)
+				recs, found, err := notes.ReadRecords(root, origSHA)
 				if err != nil {
 					return err
 				}
 				if !found {
 					continue
 				}
-				rec.Commit = head
-				if err := notes.WriteRecord(root, head, rec); err != nil {
-					return fmt.Errorf("write note for %s: %w", origSHA[:7], err)
+				for _, rec := range recs {
+					rec.Commit = head
+					if err := notes.WriteRecord(root, head, rec); err != nil {
+						return fmt.Errorf("write note for %s: %w", origSHA[:7], err)
+					}
+					copied++
 				}
-				copied++
-				fmt.Fprintf(cmd.OutOrStdout(), "Copied note from %s to %s\n", origSHA[:7], head[:7])
+				fmt.Fprintf(cmd.OutOrStdout(), "Copied notes from %s to %s\n", origSHA[:7], head[:7])
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Resolved %d squash records to %s\n", copied, head[:7])
