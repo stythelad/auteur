@@ -10,7 +10,6 @@ import (
 )
 
 // FetchAndMerge fetches notes from the remote and merges them into the local notes ref.
-// It handles diverged histories by union-merging records.
 func FetchAndMerge(repoRoot, remote string) error {
 	if remote == "" {
 		remote = "origin"
@@ -53,49 +52,57 @@ func FetchAndMerge(repoRoot, remote string) error {
 }
 
 // readRecordsFromRef reads all records from a specific notes ref.
+// It returns errors instead of swallowing them.
 func readRecordsFromRef(repoRoot, ref string) ([]provenance.Record, error) {
-	out, err := git.Run(repoRoot, "notes", "--ref="+ref, "list")
+	refName := strings.TrimPrefix(ref, "refs/notes/")
+	out, err := git.Run(repoRoot, "notes", "--ref="+refName, "list")
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("list %s: %w", ref, err)
 	}
 
 	var all []provenance.Record
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
+		parts := strings.Fields(strings.TrimSpace(line))
 		if len(parts) != 2 {
 			continue
 		}
 		objSHA := parts[1]
-		noteOut, err := git.Run(repoRoot, "notes", "--ref="+ref, "show", objSHA)
+		raw, err := git.Run(repoRoot, "notes", "--ref="+refName, "show", objSHA)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("show %s: %w", objSHA[:7], err)
 		}
-		recs := parseNotesJSON(noteOut)
+		recs, err := parseNotesJSON(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse note on %s: %w", objSHA[:7], err)
+		}
 		all = append(all, recs...)
 	}
 	return all, nil
 }
 
-// parseNotesJSON handles both array and single-object formats.
-func parseNotesJSON(raw string) []provenance.Record {
+// parseNotesJSON parses either a signed envelope, an array of records, or a single record.
+func parseNotesJSON(raw string) ([]provenance.Record, error) {
+	// Try envelope first
+	var env Envelope
+	if err := json.Unmarshal([]byte(raw), &env); err == nil && env.Signature != "" {
+		return env.Records, nil
+	}
+
 	// Try array
 	var recs []provenance.Record
 	if err := json.Unmarshal([]byte(raw), &recs); err == nil {
-		return recs
+		return recs, nil
 	}
+
 	// Try single object
 	var single provenance.Record
-	if err := json.Unmarshal([]byte(raw), &single); err == nil {
-		return []provenance.Record{single}
+	if err := json.Unmarshal([]byte(raw), &single); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
-	return nil
+	return []provenance.Record{single}, nil
 }
 
-// recordKey generates a unique key for deduplication.
+// recordKey generates a unique key for deduplication, including signoffs.
 func recordKey(r provenance.Record) string {
 	key := r.Commit + "|" + string(r.Confidence)
 	if r.Agent != nil {
@@ -103,6 +110,9 @@ func recordKey(r provenance.Record) string {
 	}
 	for _, lr := range r.Lines {
 		key += fmt.Sprintf("|%s:%d-%d", lr.File, lr.Start, lr.End)
+	}
+	for _, s := range r.Review.Signoffs {
+		key += "|signoff:" + s.Identity
 	}
 	return key
 }

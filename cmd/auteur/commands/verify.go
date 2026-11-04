@@ -25,16 +25,17 @@ func NewVerifyCmd() *cobra.Command {
 				return err
 			}
 
-			recs, err := loadRecords(root)
+			trustRoot, err := config.LoadTrustRoot(root)
+			if err != nil {
+				return fmt.Errorf("load trust root: %w", err)
+			}
+
+			recs, err := loadRecords(root, trustRoot)
 			if err != nil {
 				return err
 			}
 
 			integrityErr := provenance.VerifyLedger(recs)
-			trustRoot, err := config.LoadTrustRoot(root)
-			if err != nil {
-				return fmt.Errorf("load trust root: %w", err)
-			}
 			authErr := provenance.VerifySignoffs(recs, trustRoot)
 
 			fmt.Fprintf(cmd.OutOrStdout(), "=== Auteur Ledger Audit ===\n")

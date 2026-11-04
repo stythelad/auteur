@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stythelad/auteur/internal/config"
 	"github.com/stythelad/auteur/internal/git"
 	"github.com/stythelad/auteur/internal/provenance"
 )
@@ -46,7 +47,12 @@ func NewBlameCmd() *cobra.Command {
 				}
 			}
 
-			recs, err := loadRecords(root)
+			trustRoot, err := config.LoadTrustRoot(root)
+			if err != nil {
+				return fmt.Errorf("load trust root: %w", err)
+			}
+
+			recs, err := loadRecords(root, trustRoot)
 			if err != nil {
 				return err
 			}

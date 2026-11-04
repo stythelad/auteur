@@ -57,6 +57,18 @@ func newRepo(t *testing.T) *repo {
 	r.git("config", "user.name", "test")
 	r.git("config", "user.email", "test@example.com")
 	r.write(".gitignore", ".auteur/\n")
+
+	// Set up a trust root with the real test key so notes can be verified.
+	home, _ := os.UserHomeDir()
+	pubKeyPath := filepath.Join(home, ".ssh", "id_ed25519.pub")
+	if pubBytes, err := os.ReadFile(pubKeyPath); err == nil {
+		parts := strings.Fields(string(pubBytes))
+		if len(parts) >= 2 {
+			pubKey := parts[0] + " " + parts[1]
+			trustRoot := "trusted_signers:\n  \"test\": \"" + pubKey + "\"\n"
+			r.write(".auteur/allowed_signers", trustRoot)
+		}
+	}
 	return r
 }
 

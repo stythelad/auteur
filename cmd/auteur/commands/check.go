@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -60,17 +61,6 @@ func NewCheckCmd() *cobra.Command {
 				}
 			}
 
-			recs, err := loadRecords(root)
-			if err != nil {
-				return err
-			}
-			if len(recs) == 0 && !allowMissingLedger {
-				return errors.New("no provenance records found in notes or local cache; run `auteur init` and `auteur scan-history`, or pass --allow-missing-ledger")
-			}
-
-			// Trust root and cryptographic verification always run, even when
-			// --allow-missing-ledger is passed. That flag only skips the
-			// "no records" error, not the security checks.
 			var trustRoot map[string]string
 			if ciBase != "" {
 				trustRoot, err = config.LoadTrustRootFromGit(root, ciBase)
@@ -84,6 +74,16 @@ func NewCheckCmd() *cobra.Command {
 				}
 			}
 
+			recs, err := loadRecords(root, trustRoot)
+			if err != nil {
+				return err
+			}
+			if len(recs) == 0 && !allowMissingLedger {
+				return errors.New("no provenance records found in notes or local cache; run `auteur init` and `auteur scan-history`, or pass --allow-missing-ledger")
+			}
+
+			// Cryptographic verification always runs, even when --allow-missing-ledger
+			// is passed. That flag only skips the "no records" error.
 			if err := provenance.VerifyLedger(recs); err != nil {
 				return fmt.Errorf("security check failed: %w", err)
 			}
@@ -128,17 +128,11 @@ func NewCheckCmd() *cobra.Command {
 			if base != "" {
 				diffOut, err := git.Run(root, "diff", "-U0", base+"..HEAD")
 				if err == nil {
-					changedLines := git.AddedLines(diffOut)
-
-					// Map changed lines to files. For simplicity, we re-parse the diff
-					// to associate line ranges with the correct file.
 					fileLines := parseDiffFiles(diffOut)
-
 					for file, lines := range fileLines {
 						for _, lineRange := range lines {
 							for _, rule := range pol.Rules {
 								if policy.AnyMatch(rule.Paths, file) {
-									// Check EVERY line in the range
 									var uncoveredLines []int
 									for lineNum := lineRange[0]; lineNum <= lineRange[1]; lineNum++ {
 										covered := false
@@ -157,8 +151,6 @@ func NewCheckCmd() *cobra.Command {
 											uncoveredLines = append(uncoveredLines, lineNum)
 										}
 									}
-
-									// Group uncovered lines into ranges for the output
 									if len(uncoveredLines) > 0 {
 										start := uncoveredLines[0]
 										prev := start
@@ -192,7 +184,6 @@ func NewCheckCmd() *cobra.Command {
 							}
 						}
 					}
-					_ = changedLines
 				}
 			}
 
@@ -230,61 +221,8 @@ func NewCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&prBase, "pr-base", "", "shorthand for --since origin/<branch>")
 	cmd.Flags().BoolVar(&noStrict, "no-strict", false, "do not fail on unknown-origin lines")
 	cmd.Flags().BoolVar(&allowMissingLedger, "allow-missing-ledger", false, "pass even if ledger is missing")
-	cmd.Flags().StringVar(&ciBase, "ci-base", "", "Read policy and trust root from this git ref for CI")
+	cmd.Flags().StringVar(&ciBase, "ci-base", "", "Read trust root from this git ref (e.g., origin/main) for CI")
 	return cmd
-}
-
-// parseDiffFiles extracts file -> []([start, end]) from a unified diff.
-func parseDiffFiles(diff string) map[string][][2]int {
-	out := map[string][][2]int{}
-	lines := strings.Split(diff, "\n")
-
-	var currentFile string
-	var lineNum int
-	hunkRegex := regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
-
-	for _, line := range lines {
-		if strings.HasPrefix(line, "+++ b/") {
-			currentFile = line[6:]
-			continue
-		}
-		if strings.HasPrefix(line, "+++ ") {
-			currentFile = "" // /dev/null (deleted file)
-			continue
-		}
-
-		if strings.HasPrefix(line, "@@ ") {
-			matches := hunkRegex.FindStringSubmatch(line)
-			if len(matches) > 1 {
-				fmt.Sscanf(matches[1], "%d", &lineNum)
-				if lineNum == 0 {
-					lineNum = 1
-				}
-			}
-			continue
-		}
-
-		if currentFile == "" {
-			continue
-		}
-
-		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-			// Add to ranges, merging adjacent lines
-			ranges := out[currentFile]
-			if len(ranges) > 0 && ranges[len(ranges)-1][1]+1 == lineNum {
-				ranges[len(ranges)-1][1] = lineNum
-			} else {
-				ranges = append(ranges, [2]int{lineNum, lineNum})
-			}
-			out[currentFile] = ranges
-			lineNum++
-		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
-			// Deleted lines don't increment the new file line count
-		} else if strings.HasPrefix(line, " ") {
-			lineNum++
-		}
-	}
-	return out
 }
 
 func fileExists(p string) bool {
@@ -301,4 +239,66 @@ func splitLines(s string) []string {
 		}
 	}
 	return out
+}
+
+// parseDiffFiles extracts file -> []([start, end]) from a unified diff.
+func parseDiffFiles(diff string) map[string][][2]int {
+	out := map[string][][2]int{}
+	lines := strings.Split(diff, "\n")
+
+	var currentFile string
+	var lineNum int
+	// hunkRegex matches @@ -a,b +c,d @@
+	hunkRegex := regexpMustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "+++ b/") {
+			currentFile = line[6:]
+			continue
+		}
+		if strings.HasPrefix(line, "+++ ") {
+			currentFile = ""
+			continue
+		}
+
+		if strings.HasPrefix(line, "@@ ") {
+			matches := hunkRegex.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				lineNum = parseInt(matches[1])
+				if lineNum == 0 {
+					lineNum = 1
+				}
+			}
+			continue
+		}
+
+		if currentFile == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			ranges := out[currentFile]
+			if len(ranges) > 0 && ranges[len(ranges)-1][1]+1 == lineNum {
+				ranges[len(ranges)-1][1] = lineNum
+			} else {
+				ranges = append(ranges, [2]int{lineNum, lineNum})
+			}
+			out[currentFile] = ranges
+			lineNum++
+		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			// skip
+		} else if strings.HasPrefix(line, " ") {
+			lineNum++
+		}
+	}
+	return out
+}
+
+func regexpMustCompile(pattern string) *regexp.Regexp {
+	return regexp.MustCompile(pattern)
+}
+
+func parseInt(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }

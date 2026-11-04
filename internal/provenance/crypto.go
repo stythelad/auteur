@@ -58,6 +58,48 @@ func GetPublicKey(sshKeyPath string) (string, error) {
 	return pubParts[0] + " " + pubParts[1], nil
 }
 
+// SignPayload signs arbitrary bytes with the given SSH key.
+// It returns the public key and the armored signature.
+func SignPayload(payload []byte, sshKeyPath string) (pubKey, signature string, err error) {
+	if sshKeyPath == "" {
+		home, _ := os.UserHomeDir()
+		sshKeyPath = filepath.Join(home, ".ssh", "id_ed25519")
+	}
+
+	pubKeyPath := sshKeyPath + ".pub"
+	pubKeyBytes, err := os.ReadFile(pubKeyPath)
+	if err != nil {
+		return "", "", fmt.Errorf("read public key: %w", err)
+	}
+	pubParts := strings.Fields(string(pubKeyBytes))
+	if len(pubParts) < 2 {
+		return "", "", fmt.Errorf("invalid public key format")
+	}
+	pubKey = pubParts[0] + " " + pubParts[1]
+
+	tmpData := filepath.Join(".", "auteur-tmp-sig-payload")
+	if err := os.WriteFile(tmpData, payload, 0644); err != nil {
+		return "", "", fmt.Errorf("write temp data: %w", err)
+	}
+	defer os.Remove(tmpData)
+	defer os.Remove(tmpData + ".sig")
+
+	cmd := exec.Command("ssh-keygen", "-Y", "sign", "-n", "auteur", "-f", sshKeyPath, tmpData)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", "", fmt.Errorf("ssh-keygen sign failed: %w: %s", err, out)
+	}
+
+	sigBytes, err := os.ReadFile(tmpData + ".sig")
+	if err != nil {
+		return "", "", fmt.Errorf("read signature file: %w", err)
+	}
+	if len(sigBytes) == 0 {
+		return "", "", fmt.Errorf("ssh-keygen produced an empty signature")
+	}
+	return pubKey, string(sigBytes), nil
+}
+
 func SignHashBytes(hash string, sshKeyPath string) (string, error) {
 	if sshKeyPath == "" {
 		home, _ := os.UserHomeDir()
