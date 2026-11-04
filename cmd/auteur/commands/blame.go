@@ -51,6 +51,29 @@ func NewBlameCmd() *cobra.Command {
 				return err
 			}
 
+			// Filter to records whose commits are reachable from HEAD.
+			// This prevents stale records (from rebased-away commits) from
+			// shadowing the current attribution.
+			reachableOut, reachErr := git.Run(root, "rev-list", "HEAD")
+			if reachErr == nil {
+				reachable := map[string]bool{}
+				for _, sha := range strings.Split(reachableOut, "\n") {
+					sha = strings.TrimSpace(sha)
+					if sha != "" {
+						reachable[sha] = true
+					}
+				}
+				var filtered []provenance.Record
+				for _, r := range recs {
+					if reachable[r.Commit] {
+						filtered = append(filtered, r)
+					}
+				}
+				if len(filtered) > 0 {
+					recs = filtered
+				}
+			}
+
 			att := provenance.LookupLine(recs, file, line)
 
 			if asJSON {

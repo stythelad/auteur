@@ -710,3 +710,82 @@ func TestSecureReadFile_Symlink(t *testing.T) {
 		t.Fatalf("expected symlink rejection, got: %s", out)
 	}
 }
+
+func TestNotesTransportAcrossClones(t *testing.T) {
+	// Create a bare "remote" repo
+	bareDir := t.TempDir()
+	exec.Command("git", "-C", bareDir, "init", "--bare", "-q").Run()
+
+	// Developer clone
+	devDir := t.TempDir()
+	exec.Command("git", "-C", devDir, "init", "-q").Run()
+	exec.Command("git", "-C", devDir, "remote", "add", "origin", bareDir).Run()
+	exec.Command("git", "-C", devDir, "config", "user.email", "dev@test.com").Run()
+	exec.Command("git", "-C", devDir, "config", "user.name", "Dev").Run()
+
+	dev := &repo{t: t, dir: devDir}
+	dev.env = append(os.Environ(),
+		"PATH="+filepath.Dir(binaryPath)+":"+os.Getenv("PATH"),
+		"GIT_AUTHOR_NAME=Dev", "GIT_AUTHOR_EMAIL=dev@test.com",
+		"GIT_COMMITTER_NAME=Dev", "GIT_COMMITTER_EMAIL=dev@test.com",
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
+
+	dev.mustRun("init")
+	dev.write("auth/login.py", "base\n")
+	dev.git("add", "-A")
+	dev.git("commit", "-q", "-m", "base")
+	dev.git("push", "-u", "origin", "HEAD:refs/heads/main")
+
+	// Developer makes an AI commit
+	dev.mustRun("wrap", "--agent", "claude-code", "--",
+		"sh", "-c", "echo 'evil' >> auth/login.py")
+	dev.git("add", "-A")
+	dev.git("commit", "-q", "-m", "ai edit")
+	devSHA := strings.TrimSpace(dev.git("rev-parse", "HEAD"))
+
+	// Developer pushes commits AND notes
+	dev.git("push", "origin", "HEAD:refs/heads/main")
+	dev.mustRun("push", "--remote", "origin")
+
+	// Verify the note exists locally
+	if _, err := exec.Command("git", "-C", devDir, "notes", "--ref=auteur", "show", devSHA).CombinedOutput(); err != nil {
+		t.Fatalf("note was not written locally: %v", err)
+	}
+
+	// CI clone (fresh)
+	ciDir := t.TempDir()
+	exec.Command("git", "-C", ciDir, "init", "-q").Run()
+	exec.Command("git", "-C", ciDir, "remote", "add", "origin", bareDir).Run()
+	exec.Command("git", "-C", ciDir, "config", "user.email", "ci@test.com").Run()
+	exec.Command("git", "-C", ciDir, "config", "user.name", "CI").Run()
+
+	ci := &repo{t: t, dir: ciDir}
+	ci.env = append(os.Environ(),
+		"PATH="+filepath.Dir(binaryPath)+":"+os.Getenv("PATH"),
+		"GIT_AUTHOR_NAME=CI", "GIT_AUTHOR_EMAIL=ci@test.com",
+		"GIT_COMMITTER_NAME=CI", "GIT_COMMITTER_EMAIL=ci@test.com",
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
+
+	// CI fetches code AND notes
+	ci.git("fetch", "origin", "main:main")
+	ci.git("checkout", "main")
+
+	// CI runs `auteur fetch` to ensure notes are present (loadRecords also auto-fetches)
+	fetchOut := ci.mustRun("fetch", "--remote", "origin")
+	if !strings.Contains(fetchOut, "Fetched") {
+		t.Fatalf("expected fetch confirmation, got: %s", fetchOut)
+	}
+
+	// Verify notes are now there
+	out := ci.mustRun("blame", "auth/login.py:2")
+	if !strings.Contains(out, "claude-code") {
+		t.Fatalf("expected claude-code attribution after fetch, got: %s", out)
+	}
+	if !strings.Contains(out, devSHA[:7]) {
+		t.Fatalf("expected dev SHA %s in blame, got: %s", devSHA[:7], out)
+	}
+}

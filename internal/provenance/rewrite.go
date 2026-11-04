@@ -3,6 +3,7 @@ package provenance
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // RewriteRecords copies records for each old SHA to a new record with the
@@ -38,6 +39,7 @@ func RewriteRecords(repoRoot string, pairs map[string]string) (int, []Record, er
 		for _, r := range bySHA[oldSHA] {
 			c := r
 			c.Commit = newSHA
+			c.Timestamp = time.Now().UTC()
 			if err := store.Append(c); err != nil {
 				return len(copied), copied, fmt.Errorf("append rewritten record: %w", err)
 			}
