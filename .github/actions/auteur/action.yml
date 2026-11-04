@@ -10,7 +10,7 @@ inputs:
   auteur-version:
     description: 'The exact version of Auteur to install'
     required: false
-    default: 'v0.6.0'
+    default: 'v0.6.5'
 runs:
   using: 'composite'
   steps:

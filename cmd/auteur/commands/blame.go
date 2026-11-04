@@ -73,9 +73,9 @@ func NewBlameCmd() *cobra.Command {
 						filtered = append(filtered, r)
 					}
 				}
-				if len(filtered) > 0 {
-					recs = filtered
-				}
+				// Do NOT fall back to unfiltered records if nothing is reachable.
+				// If no records are in the current history, they are all stale.
+				recs = filtered
 			}
 
 			var att provenance.Attribution
