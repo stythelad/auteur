@@ -1,0 +1,1 @@
+{"commit":"6c893527ee4f93700f13818cc46cc7cb98635e5c","timestamp":"2026-11-04T05:22:27Z","author":{"name":"","email":""},"agent":{"name":"claude-code"},"confidence":"high","lines":[{"file":"src/test.txt","start":2,"end":2,"origin":"agent"}],"review":{}}
