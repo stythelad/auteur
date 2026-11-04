@@ -10,16 +10,19 @@ import (
 // the given commit SHA and deletes the pending file.
 //
 // Returns the number of records resolved.
-func ResolvePending(repoRoot, commitSHA, commitTimestamp string, changedFiles map[string]bool) (int, error) {
+// ResolvePending returns the number of records resolved and the list of records
+// that were written. Callers should persist these records to the shared notes ref
+// if they want them to be visible to CI and other clones.
+func ResolvePending(repoRoot, commitSHA, commitTimestamp string, changedFiles map[string]bool) (int, []Record, error) {
 	pendings, err := ListPending(repoRoot)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if len(pendings) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	store := Open(repoRoot)
-	resolved := 0
+	var resolved []Record
 	for _, p := range pendings {
 		if !touchesAny(p.Record.Lines, changedFiles) {
 			continue
@@ -30,14 +33,14 @@ func ResolvePending(repoRoot, commitSHA, commitTimestamp string, changedFiles ma
 			rec.Timestamp = parseOrNow(commitTimestamp)
 		}
 		if err := store.Append(rec); err != nil {
-			return resolved, fmt.Errorf("append resolved record: %w", err)
+			return len(resolved), resolved, fmt.Errorf("append resolved record: %w", err)
 		}
 		if err := DeletePending(repoRoot, p.UUID); err != nil {
-			return resolved, err
+			return len(resolved), resolved, err
 		}
-		resolved++
+		resolved = append(resolved, rec)
 	}
-	return resolved, nil
+	return len(resolved), resolved, nil
 }
 
 func touchesAny(ranges []LineRange, changed map[string]bool) bool {

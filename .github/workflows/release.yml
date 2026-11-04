@@ -27,6 +27,15 @@ jobs:
           go build -o auteur-${GOOS}-${GOARCH} ./cmd/auteur
           tar czf auteur-${{ matrix.suffix }}.tar.gz auteur-${GOOS}-${GOARCH}
       - uses: softprops/action-gh-release@v2
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         with:
           files: auteur-${{ matrix.suffix }}.tar.gz
           generate_release_notes: true
+
+      - uses: softprops/action-gh-release@v2
+        if: matrix.goos != 'linux' || matrix.goarch != 'amd64'
+        with:
+          files: auteur-${{ matrix.suffix }}.tar.gz
+          generate_release_notes: false
+          prerelease: false
+          draft: false

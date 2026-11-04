@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stythelad/auteur/internal/git"
+	"github.com/stythelad/auteur/internal/notes"
 	"github.com/stythelad/auteur/internal/provenance"
 )
 
@@ -122,6 +123,7 @@ records to the ledger.`,
 							c.Commit = head
 							c.Timestamp = time.Now().UTC()
 							store.Append(c)
+							notes.WriteRecord(root, head, c)
 						}
 					}
 					if verbose {
@@ -134,9 +136,15 @@ records to the ledger.`,
 			snapDir := filepath.Join(root, ".git", "auteur", "snapshots")
 			os.RemoveAll(snapDir)
 
-			n, err := provenance.ResolvePending(root, head, ts, files)
+			n, resolvedRecs, err := provenance.ResolvePending(root, head, ts, files)
 			if err != nil {
 				return err
+			}
+
+			for _, rec := range resolvedRecs {
+				if err := notes.WriteRecord(root, head, rec); err != nil {
+					return fmt.Errorf("write note: %w", err)
+				}
 			}
 			if verbose {
 				fmt.Fprintf(cmd.OutOrStdout(), "resolved %d pending record(s) to %s\n", n, head[:7])
