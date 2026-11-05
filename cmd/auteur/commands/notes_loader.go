@@ -14,9 +14,16 @@ import (
 // It verifies each signed envelope against the trust root.
 // If the notes ref is empty or unavailable, it falls back to the local JSONL cache.
 func loadRecords(root string, trustRoot map[string]string) ([]provenance.Record, error) {
-	// Try to fetch notes silently. If there's no remote, this will fail and we ignore it.
-	if _, err := git.Run(root, "remote", "get-url", "origin"); err == nil {
-		_ = notes.FetchAndMerge(root, "origin")
+	// Fetch shared notes into a separate ref and read them without importing
+	// or re-signing them. The reader needs only a public trust root, never a
+	// private SSH key. A configured remote fetch error is fatal: silently using
+	// only local records would make CI's policy input incomplete.
+	var remoteEnvelopes []notes.Envelope
+	if _, remoteErr := git.Run(root, "remote", "get-url", "origin"); remoteErr == nil {
+		remoteEnvelopes, err = notes.FetchEnvelopes(root, "origin")
+		if err != nil {
+			return nil, fmt.Errorf("fetch remote provenance notes: %w", err)
+		}
 	}
 
 	envelopes, err := notes.ListAllEnvelopes(root)
@@ -25,8 +32,19 @@ func loadRecords(root string, trustRoot map[string]string) ([]provenance.Record,
 		return provenance.Open(root).Load()
 	}
 
+	// Include the separately fetched remote envelopes. Do not write them back
+	// under a new local signature: that would launder their provenance.
+	seen := make(map[string]bool)
+	for _, env := range envelopes {
+		seen[env.Signature] = true
+	}
+	for _, env := range remoteEnvelopes {
+		if !seen[env.Signature] {
+			envelopes = append(envelopes, env)
+			seen[env.Signature] = true
+		}
+	}
 	if len(envelopes) == 0 {
-		// Notes are empty or unsigned. Fall back to the local JSONL cache.
 		return provenance.Open(root).Load()
 	}
 
