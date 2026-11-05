@@ -43,7 +43,10 @@ func NewCheckCmd() *cobra.Command {
 
 			// Reject PRs that modify the trust root.
 			if base != "" {
-				changedOut, _ := git.Run(root, "diff", "--name-only", base+"..HEAD", "--", ".auteur/allowed_signers")
+				changedOut, diffErr := git.Run(root, "diff", "--name-only", base+"..HEAD", "--", ".auteur/allowed_signers")
+				if diffErr != nil {
+					return fmt.Errorf("check trust-root changes against %s: %w", base, diffErr)
+				}
 				if strings.TrimSpace(changedOut) != "" {
 					return fmt.Errorf("security violation: PR modifies the trust root (.auteur/allowed_signers). trust root changes must be merged by an administrator into the base branch")
 				}
@@ -125,8 +128,11 @@ func NewCheckCmd() *cobra.Command {
 
 			// Line-level validation against the actual diff.
 			if base != "" {
-				diffOut, err := git.Run(root, "diff", "-U0", base+"..HEAD")
-				if err == nil {
+				diffOut, diffErr := git.Run(root, "diff", "-U0", base+"..HEAD")
+				if diffErr != nil {
+					return fmt.Errorf("calculate line-level diff against %s: %w", base, diffErr)
+				}
+				{
 					fileLines := parseDiffFiles(diffOut)
 					for file, lines := range fileLines {
 						for _, lineRange := range lines {
@@ -136,6 +142,11 @@ func NewCheckCmd() *cobra.Command {
 									for lineNum := lineRange[0]; lineNum <= lineRange[1]; lineNum++ {
 										covered := false
 										for _, r := range recs {
+											// Historical records reachable from the base branch must not
+											// satisfy provenance requirements for lines introduced by this PR.
+											if skipSet[r.Commit] {
+												continue
+											}
 											for _, lr := range r.Lines {
 												if lr.File == file && lineNum >= lr.Start && lineNum <= lr.End {
 													covered = true
@@ -187,6 +198,13 @@ func NewCheckCmd() *cobra.Command {
 			}
 
 			failed := false
+			for _, v := range vs {
+				if !v.IsAdvisory {
+					failed = true
+					break
+				}
+			}
+
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -199,7 +217,6 @@ func NewCheckCmd() *cobra.Command {
 						fmt.Fprintf(cmd.OutOrStdout(), "ADVISORY   %s:%d-%d  [%s]\n", v.File, v.Start, v.End, v.Rule)
 					} else {
 						fmt.Fprintf(cmd.OutOrStdout(), "VIOLATION  %s:%d-%d  [%s]\n", v.File, v.Start, v.End, v.Rule)
-						failed = true
 					}
 					fmt.Fprintf(cmd.OutOrStdout(), "  commit: %s\n", v.Commit)
 					fmt.Fprintf(cmd.OutOrStdout(), "  reason: %s\n", v.Reason)
@@ -209,8 +226,14 @@ func NewCheckCmd() *cobra.Command {
 				}
 			}
 
-			if !asJSON && failed {
-				os.Exit(1)
+			if failed {
+				count := 0
+				for _, v := range vs {
+					if !v.IsAdvisory {
+						count++
+					}
+				}
+				return fmt.Errorf("policy check failed: %d violation(s)", count)
 			}
 			return nil
 		},
