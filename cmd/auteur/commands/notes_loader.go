@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/stythelad/auteur/internal/git"
@@ -28,8 +27,7 @@ func loadRecords(root string, trustRoot map[string]string) ([]provenance.Record,
 
 	envelopes, err := notes.ListAllEnvelopes(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "auteur: warning: could not read notes ref (%v); using local cache\n", err)
-		return provenance.Open(root).Load()
+		return nil, fmt.Errorf("read local provenance notes: %w", err)
 	}
 
 	// Include the separately fetched remote envelopes. Do not write them back
