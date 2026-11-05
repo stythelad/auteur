@@ -15,7 +15,7 @@ const NotesRef = "auteur"
 // immutable here: re-signing their records with the current developer's key
 // would incorrectly transfer provenance from the original signer.
 func WriteRecord(repoRoot, sha string, r provenance.Record) error {
-	existing, found, err := ReadRecords(repoRoot, sha)
+	_, found, err := ReadRecords(repoRoot, sha)
 	if err != nil {
 		return err
 	}
@@ -25,7 +25,6 @@ func WriteRecord(repoRoot, sha string, r provenance.Record) error {
 		// Do not merge existing records into a new envelope. The existing note
 		// may contain records signed by another party (or unsigned legacy data).
 		// Re-signing that payload would launder their provenance.
-		_ = existing
 		return fmt.Errorf("a provenance note already exists for %s; refusing to re-sign or overwrite it", sha)
 	}
 	records = append(records, r)
