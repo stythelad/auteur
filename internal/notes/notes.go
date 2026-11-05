@@ -183,16 +183,13 @@ func Push(repoRoot, remote string) error {
 		return nil
 	}
 
-	// If it failed, try to fetch+merge and retry with --force.
+	// Never force-push notes after a race. A remote update may have landed
+	// after the fetch, and --force would silently destroy that provenance.
 	if strings.Contains(err.Error(), "non-fast-forward") || strings.Contains(err.Error(), "rejected") {
-		if mergeErr := FetchAndMerge(repoRoot, remote); mergeErr != nil {
-			return fmt.Errorf("push failed and merge also failed: push=%v merge=%w", err, mergeErr)
+		if _, fetchErr := FetchEnvelopes(repoRoot, remote); fetchErr != nil {
+			return fmt.Errorf("notes push rejected; fetching remote notes also failed: push=%v fetch=%w", err, fetchErr)
 		}
-		_, retryErr := git.Run(repoRoot, "push", "--force", remote, "refs/notes/"+NotesRef)
-		if retryErr != nil {
-			return fmt.Errorf("push failed after merge: %w", retryErr)
-		}
-		return nil
+		return fmt.Errorf("notes push rejected because the remote has newer provenance; remote notes were fetched to refs/notes/auteur-remote. Reconcile notes explicitly and retry (refusing to force-push): %w", err)
 	}
 
 	return err
