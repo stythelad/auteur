@@ -19,10 +19,11 @@ func loadRecords(root string, trustRoot map[string]string) ([]provenance.Record,
 	// only local records would make CI's policy input incomplete.
 	var remoteEnvelopes []notes.Envelope
 	if _, remoteErr := git.Run(root, "remote", "get-url", "origin"); remoteErr == nil {
-		remoteEnvelopes, err = notes.FetchEnvelopes(root, "origin")
-		if err != nil {
-			return nil, fmt.Errorf("fetch remote provenance notes: %w", err)
+		fetched, fetchErr := notes.FetchEnvelopes(root, "origin")
+		if fetchErr != nil {
+			return nil, fmt.Errorf("fetch remote provenance notes: %w", fetchErr)
 		}
+		remoteEnvelopes = fetched
 	}
 
 	envelopes, err := notes.ListAllEnvelopes(root)
