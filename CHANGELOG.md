@@ -1,4 +1,17 @@
-# Changelog 
+# Changelog
+
+## v0.6.5 — 2026-11-04
+
+### Security & Architecture
+- **Cryptographically signed notes:** Every provenance record in `refs/notes/auteur` is now signed with the developer`'`s SSH key.
+- **CI verifies signatures:** `loadRecords` verifies the envelope signature against the trust root.
+- **Multi-developer support:** `auteur fetch` and `auteur push` handle non-fast-forward merges via union-merge and force-retry.
+- **Multi-record notes:** Notes are now arrays of records, preventing overwrites.
+- **Line-drift-aware lookup:** `blame` consults `git blame` when lines shift; results remain best-effort and should not be treated as proof that a specific line was authored by the recorded contributor.
+- **`resolve-squash` auto-detect fixed:** Correctly uses `git cat-file` errors instead of empty output.
+- **Empty ledger relaxed:** `auteur check` warns instead of hard-failing on empty ledgers.
+- **Blame reachability strictly enforced:** Stale records from orphaned commits are no longer used as a fallback.
+
 ## v0.6.0 — 2026-11-04
 
 ### Added
@@ -122,16 +135,3 @@
 ## v0.1.0 — 2026-10-31
 
 Initial release. Core loop: init, wrap, blame, check, scan-history.
-
-
-## v0.6.5 — 2026-11-04
-
-### Security & Architecture
-- **Cryptographically signed notes:** Every provenance record in `refs/notes/auteur` is now signed with the developer`'`s SSH key.
-- **CI verifies signatures:** `loadRecords` verifies the envelope signature against the trust root.
-- **Multi-developer support:** `auteur fetch` and `auteur push` handle non-fast-forward merges via union-merge and force-retry.
-- **Multi-record notes:** Notes are now arrays of records, preventing overwrites.
-- **Line-drift aware blame:** `blame` uses `git blame` to track exact commit attribution when lines shift.
-- **`resolve-squash` auto-detect fixed:** Correctly uses `git cat-file` errors instead of empty output.
-- **Empty ledger relaxed:** `auteur check` warns instead of hard-failing on empty ledgers.
-- **Blame reachability strictly enforced:** Stale records from orphaned commits are no longer used as a fallback.
