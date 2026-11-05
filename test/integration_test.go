@@ -383,6 +383,23 @@ func TestPromptRedaction(t *testing.T) {
 		t.Fatalf("expected [REDACTED] in ledger: %s", ledger)
 	}
 }
+func testPublicKey(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("get isolated test home: %v", err)
+	}
+	pubBytes, err := os.ReadFile(filepath.Join(home, ".ssh", "id_ed25519.pub"))
+	if err != nil {
+		t.Fatalf("read isolated test public key: %v", err)
+	}
+	parts := strings.Fields(string(pubBytes))
+	if len(parts) < 2 {
+		t.Fatalf("invalid isolated test public key")
+	}
+	return parts[0] + " " + parts[1]
+}
+
 func generateTestKey(t *testing.T, dir string) string {
 	t.Helper()
 	keyPath := filepath.Join(dir, "test_key")
@@ -722,17 +739,14 @@ func TestNotesTransportAcrossClones(t *testing.T) {
 	exec.Command("git", "-C", devDir, "config", "user.email", "dev@test.com").Run()
 	exec.Command("git", "-C", devDir, "config", "user.name", "Dev").Run()
 
-	// Set up the trust root so notes can be verified
-	home, _ := os.UserHomeDir()
-	pubKeyPath := filepath.Join(home, ".ssh", "id_ed25519.pub")
-	if pubBytes, err := os.ReadFile(pubKeyPath); err == nil {
-		parts := strings.Fields(string(pubBytes))
-		if len(parts) >= 2 {
-			pubKey := parts[0] + " " + parts[1]
-			trustRoot := "trusted_signers:\n  \"Dev\": \"" + pubKey + "\"\n  \"CI\": \"" + pubKey + "\"\n"
-			os.MkdirAll(filepath.Join(devDir, ".auteur"), 0o755)
-			os.WriteFile(filepath.Join(devDir, ".auteur", "allowed_signers"), []byte(trustRoot), 0o644)
-		}
+	// Set up a trust root so notes from Dev and CI can be verified.
+	pubKey := testPublicKey(t)
+	trustRoot := "trusted_signers:\n  \"Dev\": \"" + pubKey + "\"\n  \"CI\": \"" + pubKey + "\"\n"
+	if err := os.MkdirAll(filepath.Join(devDir, ".auteur"), 0o755); err != nil {
+		t.Fatalf("create developer trust-root directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(devDir, ".auteur", "allowed_signers"), []byte(trustRoot), 0o644); err != nil {
+		t.Fatalf("write developer trust root: %v", err)
 	}
 
 	dev := &repo{t: t, dir: devDir}
