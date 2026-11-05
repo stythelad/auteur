@@ -169,37 +169,7 @@ func ListEnvelopesFromRef(repoRoot, ref string) ([]Envelope, error) {
 // ListAllEnvelopes returns all signed envelopes in the repo.
 // This is used by loadRecords to verify signatures before trusting the data.
 func ListAllEnvelopes(repoRoot string) ([]Envelope, error) {
-	out, err := git.Run(repoRoot, "notes", "--ref="+NotesRef, "list")
-	if err != nil {
-		if strings.Contains(err.Error(), "no notes found") {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var envelopes []Envelope
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) != 2 {
-			continue
-		}
-		objSha := parts[1]
-
-		noteOut, err := git.Run(repoRoot, "notes", "--ref="+NotesRef, "show", objSha)
-		if err != nil {
-			continue
-		}
-
-		var env Envelope
-		if err := json.Unmarshal([]byte(noteOut), &env); err == nil && env.Signature != "" {
-			envelopes = append(envelopes, env)
-		}
-	}
-	return envelopes, nil
+	return ListEnvelopesFromRef(repoRoot, "refs/notes/"+NotesRef)
 }
 
 // Push pushes the notes ref to the remote, handling non-fast-forward by merging and retrying.
