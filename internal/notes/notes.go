@@ -11,8 +11,9 @@ import (
 
 const NotesRef = "auteur"
 
-// WriteRecord appends a provenance Record to the Git note for a commit SHA.
-// It signs the resulting envelope with the developer's key.
+// WriteRecord creates a signed Git note for a commit SHA. Existing notes are
+// immutable here: re-signing their records with the current developer's key
+// would incorrectly transfer provenance from the original signer.
 func WriteRecord(repoRoot, sha string, r provenance.Record) error {
 	existing, found, err := ReadRecords(repoRoot, sha)
 	if err != nil {
@@ -21,7 +22,11 @@ func WriteRecord(repoRoot, sha string, r provenance.Record) error {
 
 	var records []provenance.Record
 	if found {
-		records = existing
+		// Do not merge existing records into a new envelope. The existing note
+		// may contain records signed by another party (or unsigned legacy data).
+		// Re-signing that payload would launder their provenance.
+		_ = existing
+		return fmt.Errorf("a provenance note already exists for %s; refusing to re-sign or overwrite it", sha)
 	}
 	records = append(records, r)
 
