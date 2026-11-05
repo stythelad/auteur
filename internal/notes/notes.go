@@ -112,6 +112,60 @@ func ListAllRecords(repoRoot string) ([]provenance.Record, error) {
 	return allRecords, nil
 }
 
+// FetchEnvelopes fetches the remote notes ref into an isolated local ref and
+// returns its signed envelopes without importing or re-signing remote records.
+// Reading shared provenance must never require the reader's private signing key.
+func FetchEnvelopes(repoRoot, remote string) ([]Envelope, error) {
+	if remote == "" {
+		remote = "origin"
+	}
+	tmpRef := "refs/notes/auteur-remote"
+	_, err := git.Run(repoRoot, "fetch", remote, "+"+ "refs/notes/"+NotesRef+":"+tmpRef)
+	if err != nil {
+		if strings.Contains(err.Error(), "couldn't find remote ref") || strings.Contains(err.Error(), "no such ref") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("fetch remote notes: %w", err)
+	}
+	return ListEnvelopesFromRef(repoRoot, tmpRef)
+}
+
+// ListEnvelopesFromRef reads signed envelopes from a notes ref. Malformed or
+// unsigned notes are errors rather than silently disappearing from policy input.
+func ListEnvelopesFromRef(repoRoot, ref string) ([]Envelope, error) {
+	refName := strings.TrimPrefix(ref, "refs/notes/")
+	out, err := git.Run(repoRoot, "notes", "--ref="+refName, "list")
+	if err != nil {
+		if strings.Contains(err.Error(), "no notes found") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list notes %s: %w", ref, err)
+	}
+	var envelopes []Envelope
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.Fields(strings.TrimSpace(line))
+		if len(parts) != 2 {
+			if strings.TrimSpace(line) != "" {
+				return nil, fmt.Errorf("malformed notes list entry %q", line)
+			}
+			continue
+		}
+		note, err := git.Run(repoRoot, "notes", "--ref="+refName, "show", parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("read note for %s: %w", parts[1], err)
+		}
+		var env Envelope
+		if err := json.Unmarshal([]byte(note), &env); err != nil {
+			return nil, fmt.Errorf("parse signed note for %s: %w", parts[1], err)
+		}
+		if env.Signature == "" || len(env.Records) == 0 {
+			return nil, fmt.Errorf("unsigned or empty remote note for %s", parts[1])
+		}
+		envelopes = append(envelopes, env)
+	}
+	return envelopes, nil
+}
+
 // ListAllEnvelopes returns all signed envelopes in the repo.
 // This is used by loadRecords to verify signatures before trusting the data.
 func ListAllEnvelopes(repoRoot string) ([]Envelope, error) {
