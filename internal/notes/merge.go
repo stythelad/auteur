@@ -10,45 +10,13 @@ import (
 )
 
 // FetchAndMerge fetches notes from the remote and merges them into the local notes ref.
+// FetchAndMerge is retained for source compatibility. Remote notes are no
+// longer copied into the local notes ref because doing so previously caused
+// imported records to be re-signed by the receiving developer. Use
+// FetchEnvelopes and verify each envelope against the repository trust root.
 func FetchAndMerge(repoRoot, remote string) error {
-	if remote == "" {
-		remote = "origin"
-	}
-
-	tmpRef := "refs/notes/auteur-remote"
-	_, err := git.Run(repoRoot, "fetch", remote, fmt.Sprintf("refs/notes/%s:%s", NotesRef, tmpRef))
-	if err != nil {
-		if strings.Contains(err.Error(), "couldn't find remote ref") || strings.Contains(err.Error(), "no such ref") {
-			return nil
-		}
-		return fmt.Errorf("fetch notes: %w", err)
-	}
-
-	localRecs, _ := ListAllRecords(repoRoot)
-	remoteRecs, err := readRecordsFromRef(repoRoot, tmpRef)
-	if err != nil {
-		return fmt.Errorf("read remote notes: %w", err)
-	}
-
-	if len(remoteRecs) == 0 {
-		return nil
-	}
-
-	seen := map[string]bool{}
-	for _, r := range localRecs {
-		seen[recordKey(r)] = true
-	}
-
-	for _, r := range remoteRecs {
-		key := recordKey(r)
-		if !seen[key] {
-			if err := WriteRecord(repoRoot, r.Commit, r); err != nil {
-				return fmt.Errorf("write merged note: %w", err)
-			}
-			seen[key] = true
-		}
-	}
-	return nil
+	_, err := FetchEnvelopes(repoRoot, remote)
+	return err
 }
 
 // readRecordsFromRef reads all records from a specific notes ref.
