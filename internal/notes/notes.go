@@ -11,17 +11,21 @@ import (
 
 const NotesRef = "auteur"
 
-// WriteRecord appends a provenance Record to the Git note for a commit SHA.
-// It signs the resulting envelope with the developer's key.
+// WriteRecord creates a signed Git note for a commit SHA. Existing notes are
+// immutable here: re-signing their records with the current developer's key
+// would incorrectly transfer provenance from the original signer.
 func WriteRecord(repoRoot, sha string, r provenance.Record) error {
-	existing, found, err := ReadRecords(repoRoot, sha)
+	_, found, err := ReadRecords(repoRoot, sha)
 	if err != nil {
 		return err
 	}
 
 	var records []provenance.Record
 	if found {
-		records = existing
+		// Do not merge existing records into a new envelope. The existing note
+		// may contain records signed by another party (or unsigned legacy data).
+		// Re-signing that payload would launder their provenance.
+		return fmt.Errorf("a provenance note already exists for %s; refusing to re-sign or overwrite it", sha)
 	}
 	records = append(records, r)
 
@@ -112,40 +116,64 @@ func ListAllRecords(repoRoot string) ([]provenance.Record, error) {
 	return allRecords, nil
 }
 
-// ListAllEnvelopes returns all signed envelopes in the repo.
-// This is used by loadRecords to verify signatures before trusting the data.
-func ListAllEnvelopes(repoRoot string) ([]Envelope, error) {
-	out, err := git.Run(repoRoot, "notes", "--ref="+NotesRef, "list")
+// FetchEnvelopes fetches the remote notes ref into an isolated local ref and
+// returns its signed envelopes without importing or re-signing remote records.
+// Reading shared provenance must never require the reader's private signing key.
+func FetchEnvelopes(repoRoot, remote string) ([]Envelope, error) {
+	if remote == "" {
+		remote = "origin"
+	}
+	tmpRef := "refs/notes/auteur-remote"
+	_, err := git.Run(repoRoot, "fetch", remote, "+"+ "refs/notes/"+NotesRef+":"+tmpRef)
+	if err != nil {
+		if strings.Contains(err.Error(), "couldn't find remote ref") || strings.Contains(err.Error(), "no such ref") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("fetch remote notes: %w", err)
+	}
+	return ListEnvelopesFromRef(repoRoot, tmpRef)
+}
+
+// ListEnvelopesFromRef reads signed envelopes from a notes ref. Malformed or
+// unsigned notes are errors rather than silently disappearing from policy input.
+func ListEnvelopesFromRef(repoRoot, ref string) ([]Envelope, error) {
+	refName := strings.TrimPrefix(ref, "refs/notes/")
+	out, err := git.Run(repoRoot, "notes", "--ref="+refName, "list")
 	if err != nil {
 		if strings.Contains(err.Error(), "no notes found") {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("list notes %s: %w", ref, err)
 	}
-
 	var envelopes []Envelope
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
+		parts := strings.Fields(strings.TrimSpace(line))
 		if len(parts) != 2 {
+			if strings.TrimSpace(line) != "" {
+				return nil, fmt.Errorf("malformed notes list entry %q", line)
+			}
 			continue
 		}
-		objSha := parts[1]
-
-		noteOut, err := git.Run(repoRoot, "notes", "--ref="+NotesRef, "show", objSha)
+		note, err := git.Run(repoRoot, "notes", "--ref="+refName, "show", parts[1])
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("read note for %s: %w", parts[1], err)
 		}
-
 		var env Envelope
-		if err := json.Unmarshal([]byte(noteOut), &env); err == nil && env.Signature != "" {
-			envelopes = append(envelopes, env)
+		if err := json.Unmarshal([]byte(note), &env); err != nil {
+			return nil, fmt.Errorf("parse signed note for %s: %w", parts[1], err)
 		}
+		if env.Signature == "" || len(env.Records) == 0 {
+			return nil, fmt.Errorf("unsigned or empty remote note for %s", parts[1])
+		}
+		envelopes = append(envelopes, env)
 	}
 	return envelopes, nil
+}
+
+// ListAllEnvelopes returns all signed envelopes in the repo.
+// This is used by loadRecords to verify signatures before trusting the data.
+func ListAllEnvelopes(repoRoot string) ([]Envelope, error) {
+	return ListEnvelopesFromRef(repoRoot, "refs/notes/"+NotesRef)
 }
 
 // Push pushes the notes ref to the remote, handling non-fast-forward by merging and retrying.
@@ -159,16 +187,13 @@ func Push(repoRoot, remote string) error {
 		return nil
 	}
 
-	// If it failed, try to fetch+merge and retry with --force.
+	// Never force-push notes after a race. A remote update may have landed
+	// after the fetch, and --force would silently destroy that provenance.
 	if strings.Contains(err.Error(), "non-fast-forward") || strings.Contains(err.Error(), "rejected") {
-		if mergeErr := FetchAndMerge(repoRoot, remote); mergeErr != nil {
-			return fmt.Errorf("push failed and merge also failed: push=%v merge=%w", err, mergeErr)
+		if _, fetchErr := FetchEnvelopes(repoRoot, remote); fetchErr != nil {
+			return fmt.Errorf("notes push rejected; fetching remote notes also failed: push=%v fetch=%w", err, fetchErr)
 		}
-		_, retryErr := git.Run(repoRoot, "push", "--force", remote, "refs/notes/"+NotesRef)
-		if retryErr != nil {
-			return fmt.Errorf("push failed after merge: %w", retryErr)
-		}
-		return nil
+		return fmt.Errorf("notes push rejected because the remote has newer provenance; remote notes were fetched to refs/notes/auteur-remote. Reconcile notes explicitly and retry (refusing to force-push): %w", err)
 	}
 
 	return err
