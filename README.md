@@ -22,7 +22,9 @@ Auteur is designed to make provenance easier to inspect and policy-check. It
 does not independently prove that a model produced particular code: attribution
 depends on the capture mechanism, the integrity of the repository and notes,
 and the trust placed in signing keys and contributors. Treat provenance as
-auditable evidence, not a substitute for code review.
+auditable evidence, not a substitute for code review. `auteur blame` is a
+best-effort lookup: its current line-to-record matching does not prove that the
+specific displayed line was introduced by the recorded author.
 
 ## What Auteur records
 
@@ -330,7 +332,7 @@ jobs:
   provenance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -362,7 +364,7 @@ notes ref is not evidence that all changed code has valid provenance.
 |---|---|
 | `auteur init` | Initialize local state and install Git/editor hooks |
 | `auteur wrap -- <command>` | Capture changes made by a wrapped command |
-| `auteur blame <file>:<line>` | Show provenance for a line |
+| `auteur blame <file>:<line>` | Show candidate provenance associated with a line (best-effort; not proof of authorship) |
 | `auteur check` | Evaluate provenance policy |
 | `auteur sign [commit-sha]` | Sign off on a commit's provenance |
 | `auteur verify` | Audit local provenance integrity and signatures |
